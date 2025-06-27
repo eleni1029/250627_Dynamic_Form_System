@@ -1,0 +1,83 @@
+# docker-compose.yml - 更新版本（放在項目根目錄）
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: dynamic_form_postgres
+    environment:
+      POSTGRES_DB: dynamic_form_system
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/src/database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    networks:
+      - dynamic_form_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d dynamic_form_system"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: dynamic_form_backend
+    environment:
+      NODE_ENV: development
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: dynamic_form_system
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres123
+      SESSION_SECRET: your-super-secret-session-key-change-in-production
+      SESSION_MAX_AGE: 2592000000
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: admin123
+      UPLOAD_MAX_SIZE: 5242880
+      UPLOAD_PATH: ./uploads
+      BCRYPT_SALT_ROUNDS: 12
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - ./backend/uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dynamic_form_network
+    command: npm run dev
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: dynamic_form_frontend
+    environment:
+      VITE_API_BASE_URL: http://localhost:3000/api
+      VITE_APP_TITLE: Dynamic Form System
+      VITE_UPLOAD_MAX_SIZE: 5242880
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - dynamic_form_network
+    command: npm run dev
+
+volumes:
+  postgres_data:
+
+networks:
+  dynamic_form_network:
+    driver: bridge

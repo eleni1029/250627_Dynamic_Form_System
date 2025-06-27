@@ -1,0 +1,16 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# 安裝依賴
+COPY package*.json ./
+RUN npm ci
+
+# 複製源代碼
+COPY . .
+
+# 暴露端口
+EXPOSE 3000
+
+# 開發模式啟動
+CMD ["npm", "run", "dev"]
