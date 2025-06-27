@@ -1,4 +1,4 @@
-// backend/src/services/auth.service.ts - 修復類型匹配
+// backend/src/services/auth.service.ts - 生產版本
 import { UserModel } from '../models/User';
 import { ActivityLogModel } from '../models/ActivityLog';
 import { EncryptionUtil } from '../utils/encryption';
@@ -93,19 +93,17 @@ export class AuthService {
   }
 
   // 管理員登錄
-  async adminLogin(username: string, password: string, ipAddress?: string, userAgent?: string): Promise<{ success: boolean; message?: string }> {
+  async adminLogin(credentials: LoginRequest, ipAddress?: string, userAgent?: string): Promise<{ success: boolean; message?: string }> {
     try {
+      const { username, password } = credentials;
+
       // 檢查管理員憑證
       const adminUsername = process.env.ADMIN_USERNAME || 'admin';
       const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
 
       if (username !== adminUsername || password !== adminPassword) {
-        logger.warn('Invalid admin login attempt', { 
-          username, 
-          ipAddress,
-          userAgent 
-        });
-
+        logger.warn(`Admin login attempt with invalid credentials: ${username}`, { ipAddress });
+        
         // 記錄失敗的管理員登錄嘗試
         await this.activityLogModel.create({
           action_type: 'ADMIN_LOGIN_FAILED',
@@ -121,12 +119,7 @@ export class AuthService {
       }
 
       // 記錄成功的管理員登錄
-      await this.activityLogModel.create({
-        action_type: 'ADMIN_LOGIN',
-        action_description: 'Administrator logged in successfully',
-        ip_address: ipAddress,
-        user_agent: userAgent
-      });
+      await this.activityLogModel.logAdminLogin(ipAddress, userAgent);
 
       logger.info('Admin logged in successfully', { 
         username: adminUsername, 
@@ -159,12 +152,7 @@ export class AuthService {
   // 管理員登出
   async adminLogout(ipAddress?: string, userAgent?: string): Promise<void> {
     try {
-      await this.activityLogModel.create({
-        action_type: 'ADMIN_LOGOUT',
-        action_description: 'Administrator logged out',
-        ip_address: ipAddress,
-        user_agent: userAgent
-      });
+      await this.activityLogModel.logAdminLogout(ipAddress, userAgent);
       logger.info('Admin logged out', { ipAddress });
     } catch (error) {
       logger.error('Admin logout service error:', error);

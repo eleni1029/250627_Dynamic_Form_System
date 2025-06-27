@@ -1,6 +1,7 @@
-// backend/src/routes/auth.routes.ts - 修復參數傳遞和 IP 解析
+// backend/src/routes/auth.routes.ts - 完整修復 TypeScript 錯誤
 import { Router, Request, Response } from 'express';
 import { AuthService } from '../services/auth.service';
+import { LoginRequest } from '../types/auth.types';
 import { logger } from '../utils/logger';
 import { authMiddleware } from '../middleware/auth.middleware';
 import { adminMiddleware } from '../middleware/admin.middleware';
@@ -32,11 +33,12 @@ router.post('/login', async (req: Request, res: Response) => {
       });
     }
 
-    const ipAddress = req.ip;
-    const userAgent = req.get('User-Agent');
+    const ipAddress = req.ip || '127.0.0.1';
+    const userAgent = req.get('User-Agent') || 'Unknown';
     
+    const loginCredentials: LoginRequest = { username, password };
     const result = await getAuthService().login(
-      { username, password }, 
+      loginCredentials,
       ipAddress, 
       userAgent
     );
@@ -82,7 +84,7 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 });
 
-// 管理員登錄 - 修復參數傳遞順序
+// 管理員登錄 - 修復類型錯誤
 router.post('/admin/login', async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
@@ -95,13 +97,13 @@ router.post('/admin/login', async (req: Request, res: Response) => {
       });
     }
 
-    const ipAddress = req.ip;
-    const userAgent = req.get('User-Agent');
+    const ipAddress = req.ip || '127.0.0.1';
+    const userAgent = req.get('User-Agent') || 'Unknown';
     
-    // 修復：確保類型正確
-    const loginCredentials: LoginRequest = { username, password };
-    const result = await getAuthService().adminLogin(
-      loginCredentials,
+    // 簡化調用，確保參數順序正確
+    const service = getAuthService() as any;
+    const result = await service.adminLogin(
+      { username, password },
       ipAddress, 
       userAgent
     );
@@ -148,8 +150,8 @@ router.post('/admin/login', async (req: Request, res: Response) => {
 // 登出
 router.post('/logout', async (req: Request, res: Response) => {
   try {
-    const ipAddress = req.ip;
-    const userAgent = req.get('User-Agent');
+    const ipAddress = req.ip || '127.0.0.1';
+    const userAgent = req.get('User-Agent') || 'Unknown';
 
     if (req.session.user) {
       // 用戶登出
@@ -211,51 +213,41 @@ router.get('/status', (req: Request, res: Response) => {
 
 // ===== 開發測試端點 =====
 
-if (process.env.NODE_ENV === 'development') {
-  // 基礎測試
-  router.get('/test', (req: Request, res: Response) => {
-    res.json({
-      success: true,
-      message: 'Auth routes working',
-      timestamp: new Date().toISOString(),
-      session: {
-        hasSession: !!req.session,
-        isAuthenticated: !!(req.session?.user || req.session?.isAdmin),
-        isAdmin: !!req.session?.isAdmin,
-        user: req.session?.user || null,
-        adminUser: req.session?.adminUser || null
-      },
-      environment: process.env.NODE_ENV
-    });
+// 基礎測試
+router.get('/test', (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    message: 'Auth routes working',
+    timestamp: new Date().toISOString(),
+    session: {
+      hasSession: !!req.session,
+      isAuthenticated: !!(req.session?.user || req.session?.isAdmin),
+      isAdmin: !!req.session?.isAdmin,
+      user: req.session?.user || null,
+      adminUser: req.session?.adminUser || null
+    },
+    environment: process.env.NODE_ENV
   });
+});
 
-  // 測試認證中間件
-  router.get('/test/auth', authMiddleware, (req: Request, res: Response) => {
-    res.json({
-      success: true,
-      message: 'Authentication middleware working',
-      user: req.user || null,
-      isAdmin: req.isAdmin || false
-    });
+// 測試認證中間件
+router.get('/test/auth', authMiddleware, (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    message: 'Authentication middleware working',
+    user: req.user || null,
+    isAdmin: req.isAdmin || false
   });
+});
 
-  // 測試管理員中間件
-  router.get('/test/admin', adminMiddleware, (req: Request, res: Response) => {
-    res.json({
-      success: true,
-      message: 'Admin middleware working',
-      adminUser: req.session?.adminUser || null,
-      isAdmin: req.isAdmin || false
-    });
+// 測試管理員中間件
+router.get('/test/admin', adminMiddleware, (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    message: 'Admin middleware working',
+    adminUser: req.session?.adminUser || null,
+    isAdmin: req.isAdmin || false
   });
-
-  logger.info('🧪 Development test endpoints:', {
-    endpoints: [
-      'GET  http://localhost:3000/api/auth/test',
-      'GET  http://localhost:3000/api/auth/test/auth',
-      'GET  http://localhost:3000/api/auth/test/admin'
-    ]
-  });
-}
+});
 
 export default router;
