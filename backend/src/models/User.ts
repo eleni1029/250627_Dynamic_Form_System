@@ -1,21 +1,33 @@
-// backend/src/models/User.ts
+// backend/src/models/User.ts - 修復版本（延遲初始化）
 import { Pool } from 'pg';
-import { getPool } from '../config/database';
+import { getPool, isDatabaseConnected } from '../config/database';
 import { User, UserWithPassword, CreateUserRequest, UpdateUserRequest } from '../types/user.types';
 import { logger } from '../utils/logger';
 
 export class UserModel {
-  private pool: Pool;
+  private pool: Pool | null = null;
 
   constructor() {
-    this.pool = getPool();
+    // 不在構造函數中獲取 pool，而是在需要時獲取
+  }
+
+  // 獲取資料庫連接池的私有方法
+  private getDbPool(): Pool {
+    if (!this.pool) {
+      if (!isDatabaseConnected()) {
+        throw new Error('Database not connected. Please ensure database connection is established.');
+      }
+      this.pool = getPool();
+    }
+    return this.pool;
   }
 
   // 根據用戶名查找用戶（包含密碼）
   async findByUsername(username: string): Promise<UserWithPassword | null> {
     try {
+      const pool = this.getDbPool();
       const query = 'SELECT * FROM users WHERE username = $1';
-      const result = await this.pool.query(query, [username]);
+      const result = await pool.query(query, [username]);
       return result.rows[0] || null;
     } catch (error) {
       logger.error('Error finding user by username:', error);
@@ -26,12 +38,13 @@ export class UserModel {
   // 根據 ID 查找用戶（不包含密碼）
   async findById(id: string): Promise<User | null> {
     try {
+      const pool = this.getDbPool();
       const query = `
         SELECT id, username, name, avatar_url, is_active, created_at, updated_at 
         FROM users 
         WHERE id = $1
       `;
-      const result = await this.pool.query(query, [id]);
+      const result = await pool.query(query, [id]);
       return result.rows[0] || null;
     } catch (error) {
       logger.error('Error finding user by id:', error);
@@ -42,6 +55,7 @@ export class UserModel {
   // 創建新用戶
   async create(userData: CreateUserRequest & { password_hash: string }): Promise<User> {
     try {
+      const pool = this.getDbPool();
       const query = `
         INSERT INTO users (username, password_hash, name, is_active)
         VALUES ($1, $2, $3, $4)
@@ -55,7 +69,7 @@ export class UserModel {
         userData.is_active ?? true
       ];
 
-      const result = await this.pool.query(query, values);
+      const result = await pool.query(query, values);
       return result.rows[0];
     } catch (error: any) {
       logger.error('Error creating user:', error);
@@ -72,6 +86,7 @@ export class UserModel {
   // 更新用戶資訊
   async update(id: string, userData: UpdateUserRequest & { password_hash?: string }): Promise<User | null> {
     try {
+      const pool = this.getDbPool();
       const updateFields: string[] = [];
       const values: any[] = [];
       let paramCount = 1;
@@ -105,7 +120,7 @@ export class UserModel {
         RETURNING id, username, name, avatar_url, is_active, created_at, updated_at
       `;
 
-      const result = await this.pool.query(query, values);
+      const result = await pool.query(query, values);
       return result.rows[0] || null;
     } catch (error) {
       logger.error('Error updating user:', error);
@@ -116,6 +131,7 @@ export class UserModel {
   // 更新用戶頭像
   async updateAvatar(id: string, avatarUrl: string): Promise<User | null> {
     try {
+      const pool = this.getDbPool();
       const query = `
         UPDATE users 
         SET avatar_url = $1, updated_at = CURRENT_TIMESTAMP 
@@ -123,7 +139,7 @@ export class UserModel {
         RETURNING id, username, name, avatar_url, is_active, created_at, updated_at
       `;
       
-      const result = await this.pool.query(query, [avatarUrl, id]);
+      const result = await pool.query(query, [avatarUrl, id]);
       return result.rows[0] || null;
     } catch (error) {
       logger.error('Error updating user avatar:', error);
@@ -134,13 +150,14 @@ export class UserModel {
   // 獲取用戶列表（分頁）
   async getList(page: number = 1, limit: number = 20, sort: string = 'created_at', order: 'asc' | 'desc' = 'desc') {
     try {
+      const pool = this.getDbPool();
       const offset = (page - 1) * limit;
       const allowedSortFields = ['username', 'name', 'created_at', 'updated_at', 'is_active'];
       const sortField = allowedSortFields.includes(sort) ? sort : 'created_at';
 
       // 獲取總數
       const countQuery = 'SELECT COUNT(*) FROM users';
-      const countResult = await this.pool.query(countQuery);
+      const countResult = await pool.query(countQuery);
       const total = parseInt(countResult.rows[0].count);
 
       // 獲取用戶列表
@@ -151,7 +168,7 @@ export class UserModel {
         LIMIT $1 OFFSET $2
       `;
 
-      const result = await this.pool.query(query, [limit, offset]);
+      const result = await pool.query(query, [limit, offset]);
 
       return {
         users: result.rows,
@@ -169,8 +186,9 @@ export class UserModel {
   // 刪除用戶
   async delete(id: string): Promise<boolean> {
     try {
+      const pool = this.getDbPool();
       const query = 'DELETE FROM users WHERE id = $1';
-      const result = await this.pool.query(query, [id]);
+      const result = await pool.query(query, [id]);
       return result.rowCount > 0;
     } catch (error) {
       logger.error('Error deleting user:', error);
@@ -181,6 +199,7 @@ export class UserModel {
   // 檢查用戶名是否存在
   async usernameExists(username: string, excludeId?: string): Promise<boolean> {
     try {
+      const pool = this.getDbPool();
       let query = 'SELECT id FROM users WHERE username = $1';
       const values: any[] = [username];
 
@@ -189,7 +208,7 @@ export class UserModel {
         values.push(excludeId);
       }
 
-      const result = await this.pool.query(query, values);
+      const result = await pool.query(query, values);
       return result.rows.length > 0;
     } catch (error) {
       logger.error('Error checking username existence:', error);
@@ -200,6 +219,7 @@ export class UserModel {
   // 獲取用戶的專案權限
   async getUserPermissions(userId: string) {
     try {
+      const pool = this.getDbPool();
       const query = `
         SELECT 
           p.project_key,
@@ -211,7 +231,7 @@ export class UserModel {
         ORDER BY p.project_name
       `;
 
-      const result = await this.pool.query(query, [userId]);
+      const result = await pool.query(query, [userId]);
       return result.rows;
     } catch (error) {
       logger.error('Error getting user permissions:', error);

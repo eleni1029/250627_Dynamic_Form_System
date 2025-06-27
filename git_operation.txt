@@ -150,10 +150,6 @@
 **下一個里程碑：** 完成認證 API + BMI 計算器 API，達到 50% 進度
 
 --
-繼續提供之前，由於我們的對話長度太長，可能要另起會話，但是妳在新的會話
-會無法記得我們現在的進度，需要妳提供兩件事的詳細說明，保證後續的交付品質：
-1. 我們的整體需求為何？
-2. 我們目前的進度到哪裡，接下來需要提供的整體內容為何？
 
 
 --
@@ -230,3 +226,30 @@ c. 強制更新到 git 上
 git add .
 git commit -m "常規更新"
 git push origin main --force
+
+
+-
+啟動 Docker
+docker-compose up --build
+
+前端依賴與運行
+cd frontend
+npm install
+npm run dev
+
+後端依賴與運行
+cd backend
+npm install
+npm run dev
+
+
+
+--
+# 連接到 PostgreSQL
+psql postgres
+
+# 在 psql 中執行
+CREATE DATABASE dynamic_form_system;
+CREATE USER postgres WITH PASSWORD 'postgres123';
+GRANT ALL PRIVILEGES ON DATABASE dynamic_form_system TO postgres;
+\q

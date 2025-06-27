@@ -1,4 +1,4 @@
-// backend/src/config/database.ts - 完整的資料庫連接
+// backend/src/config/database.ts - 修復版本
 import { Pool, PoolClient } from 'pg';
 import { logger } from '../utils/logger';
 
@@ -11,7 +11,7 @@ export interface DatabaseConfig {
 }
 
 // 資料庫連接池
-let pool: Pool;
+let pool: Pool | null = null;
 
 // 從環境變數或 URL 解析資料庫配置
 function getDatabaseConfig(): DatabaseConfig {
@@ -90,7 +90,7 @@ export async function connectDatabase(): Promise<void> {
   }
 }
 
-// 獲取資料庫連接池
+// 獲取資料庫連接池（安全版本）
 export function getPool(): Pool {
   if (!pool) {
     throw new Error('Database not connected. Call connectDatabase() first.');
@@ -98,8 +98,22 @@ export function getPool(): Pool {
   return pool;
 }
 
+// 安全的資料庫連接池獲取（返回 null 而不是拋出錯誤）
+export function getPoolSafe(): Pool | null {
+  return pool;
+}
+
+// 檢查資料庫是否已連接
+export function isDatabaseConnected(): boolean {
+  return pool !== null;
+}
+
 // 執行查詢的輔助函數
 export async function query(text: string, params?: any[]): Promise<any> {
+  if (!pool) {
+    throw new Error('Database not connected. Call connectDatabase() first.');
+  }
+  
   const client = await pool.connect();
   try {
     const start = Date.now();
@@ -129,6 +143,10 @@ export async function query(text: string, params?: any[]): Promise<any> {
 export async function transaction<T>(
   callback: (client: PoolClient) => Promise<T>
 ): Promise<T> {
+  if (!pool) {
+    throw new Error('Database not connected. Call connectDatabase() first.');
+  }
+  
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -148,6 +166,7 @@ export async function transaction<T>(
 export async function closeDatabase(): Promise<void> {
   if (pool) {
     await pool.end();
+    pool = null;
     logger.info('Database connection pool closed');
   }
 }

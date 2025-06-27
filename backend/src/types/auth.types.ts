@@ -1,4 +1,4 @@
-// backend/src/types/auth.types.ts
+// backend/src/types/auth.types.ts - 修復類型不匹配
 export interface User {
   id: string;
   username: string;
@@ -20,7 +20,7 @@ export interface LoginRequest {
 
 export interface LoginResponse {
   success: boolean;
-  user?: Omit<User, 'password_hash'>;
+  user?: SessionUser; // 修改為使用 SessionUser
   message?: string;
 }
 
@@ -30,6 +30,8 @@ export interface SessionUser {
   name: string;
   avatar_url?: string;
   is_active: boolean;
+  created_at: Date;    // 添加缺失的屬性
+  updated_at: Date;    // 添加缺失的屬性
 }
 
 // Express Session 擴展
@@ -37,11 +39,15 @@ declare module 'express-session' {
   interface SessionData {
     user?: SessionUser;
     isAdmin?: boolean;
+    adminLastActivity?: number;
+    adminUser?: {
+      username: string;
+      loginTime?: Date;
+    };
   }
 }
 
 // ===== 用戶管理類型 =====
-// backend/src/types/user.types.ts
 export interface CreateUserRequest {
   username: string;
   password: string;
@@ -79,7 +85,6 @@ export interface UserWithPermissions extends User {
 }
 
 // ===== 專案相關類型 =====
-// backend/src/types/project.types.ts
 export interface Project {
   id: string;
   project_key: string;
