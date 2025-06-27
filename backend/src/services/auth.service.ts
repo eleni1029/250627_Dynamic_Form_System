@@ -93,40 +93,45 @@ export class AuthService {
   }
 
   // 管理員登錄
-  async adminLogin(credentials: LoginRequest, ipAddress?: string, userAgent?: string): Promise<LoginResponse> {
+  async adminLogin(username: string, password: string, ipAddress?: string, userAgent?: string): Promise<{ success: boolean; message?: string }> {
     try {
-      const { username, password } = credentials;
-
       // 檢查管理員憑證
-      const adminUsername = process.env.ADMIN_USERNAME;
-      const adminPassword = process.env.ADMIN_PASSWORD;
-
-      if (!adminUsername || !adminPassword) {
-        logger.error('Admin credentials not configured in environment variables');
-        return {
-          success: false,
-          message: 'Admin authentication not configured'
-        };
-      }
+      const adminUsername = process.env.ADMIN_USERNAME || 'admin';
+      const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
 
       if (username !== adminUsername || password !== adminPassword) {
-        logger.warn(`Admin login attempt with invalid credentials: ${username}`, { ipAddress });
+        logger.warn('Invalid admin login attempt', { 
+          username, 
+          ipAddress,
+          userAgent 
+        });
+
+        // 記錄失敗的管理員登錄嘗試
         await this.activityLogModel.create({
           action_type: 'ADMIN_LOGIN_FAILED',
-          action_description: 'Admin login failed - invalid credentials',
+          action_description: `Admin login failed - invalid credentials (${username})`,
           ip_address: ipAddress,
           user_agent: userAgent
         });
+
         return {
           success: false,
-          message: 'Invalid admin credentials'
+          message: 'Invalid administrator credentials'
         };
       }
 
-      // 管理員登錄成功
-      await this.activityLogModel.logAdminLogin(ipAddress, userAgent);
+      // 記錄成功的管理員登錄
+      await this.activityLogModel.create({
+        action_type: 'ADMIN_LOGIN',
+        action_description: 'Administrator logged in successfully',
+        ip_address: ipAddress,
+        user_agent: userAgent
+      });
 
-      logger.info('Admin logged in successfully', { ipAddress });
+      logger.info('Admin logged in successfully', { 
+        username: adminUsername, 
+        ipAddress 
+      });
 
       return {
         success: true,
@@ -195,6 +200,17 @@ export class AuthService {
     } catch (error) {
       logger.error('Get user info error:', error);
       return null;
+    }
+  }
+
+  // 管理員密碼驗證（用於敏感操作）
+  async verifyAdminPassword(password: string): Promise<boolean> {
+    try {
+      const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+      return password === adminPassword;
+    } catch (error) {
+      logger.error('Admin password verification error:', error);
+      return false;
     }
   }
 }

@@ -1,4 +1,4 @@
-// backend/src/routes/auth.routes.ts - 修復資料庫初始化順序
+// backend/src/routes/auth.routes.ts - 修復參數傳遞和 IP 解析
 import { Router, Request, Response } from 'express';
 import { AuthService } from '../services/auth.service';
 import { logger } from '../utils/logger';
@@ -82,7 +82,7 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 });
 
-// 管理員登錄
+// 管理員登錄 - 修復參數傳遞順序
 router.post('/admin/login', async (req: Request, res: Response) => {
   try {
     const { username, password } = req.body;
@@ -98,8 +98,10 @@ router.post('/admin/login', async (req: Request, res: Response) => {
     const ipAddress = req.ip;
     const userAgent = req.get('User-Agent');
     
+    // 修復：確保類型正確
+    const loginCredentials: LoginRequest = { username, password };
     const result = await getAuthService().adminLogin(
-      { username, password }, 
+      loginCredentials,
       ipAddress, 
       userAgent
     );
@@ -220,61 +222,39 @@ if (process.env.NODE_ENV === 'development') {
         hasSession: !!req.session,
         isAuthenticated: !!(req.session?.user || req.session?.isAdmin),
         isAdmin: !!req.session?.isAdmin,
-        user: req.session?.user || null
+        user: req.session?.user || null,
+        adminUser: req.session?.adminUser || null
       },
       environment: process.env.NODE_ENV
     });
   });
 
-  // 測試需要認證的端點
+  // 測試認證中間件
   router.get('/test/auth', authMiddleware, (req: Request, res: Response) => {
     res.json({
       success: true,
-      message: 'Authentication test passed',
-      data: {
-        user: req.user,
-        isAdmin: req.isAdmin,
-        timestamp: new Date().toISOString()
-      }
+      message: 'Authentication middleware working',
+      user: req.user || null,
+      isAdmin: req.isAdmin || false
     });
   });
 
-  // 測試需要管理員權限的端點
+  // 測試管理員中間件
   router.get('/test/admin', adminMiddleware, (req: Request, res: Response) => {
     res.json({
       success: true,
-      message: 'Admin authentication test passed',
-      data: {
-        isAdmin: req.isAdmin,
-        timestamp: new Date().toISOString(),
-        adminUser: req.session?.adminUser
-      }
+      message: 'Admin middleware working',
+      adminUser: req.session?.adminUser || null,
+      isAdmin: req.isAdmin || false
     });
   });
 
-  // 測試用戶權限端點
-  router.get('/test/user', authMiddleware, (req: Request, res: Response) => {
-    if (req.isAdmin) {
-      return res.json({
-        success: true,
-        message: 'Admin accessing user endpoint',
-        data: {
-          userType: 'admin',
-          user: req.user,
-          timestamp: new Date().toISOString()
-        }
-      });
-    }
-
-    res.json({
-      success: true,
-      message: 'User authentication test passed',
-      data: {
-        userType: 'user',
-        user: req.user,
-        timestamp: new Date().toISOString()
-      }
-    });
+  logger.info('🧪 Development test endpoints:', {
+    endpoints: [
+      'GET  http://localhost:3000/api/auth/test',
+      'GET  http://localhost:3000/api/auth/test/auth',
+      'GET  http://localhost:3000/api/auth/test/admin'
+    ]
   });
 }
 

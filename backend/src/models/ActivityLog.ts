@@ -1,104 +1,230 @@
-// backend/src/models/ActivityLog.ts
+// backend/src/models/ActivityLog.ts - 修復 IP 地址處理
 import { Pool } from 'pg';
-import { getPool } from '../config/database';
-import { ActivityLog, CreateActivityLogRequest } from '../types/project.types';
+import { getPool, isDatabaseConnected } from '../config/database';
+import { ActivityLog, CreateActivityLogRequest } from '../types/auth.types';
 import { logger } from '../utils/logger';
 
 export class ActivityLogModel {
-  private pool: Pool;
+  private pool: Pool | null = null;
 
   constructor() {
-    this.pool = getPool();
+    // 延遲初始化
+  }
+
+  // 獲取資料庫連接池的私有方法
+  private getDbPool(): Pool {
+    if (!this.pool) {
+      if (!isDatabaseConnected()) {
+        throw new Error('Database not connected. Please ensure database connection is established.');
+      }
+      this.pool = getPool();
+    }
+    return this.pool;
+  }
+
+  // 驗證和清理 IP 地址
+  private validateIpAddress(ipAddress?: string): string | null {
+    if (!ipAddress) return null;
+    
+    // 清理 IPv6 包裹的 IPv4 地址
+    let cleanIp = ipAddress;
+    if (cleanIp.startsWith('::ffff:')) {
+      cleanIp = cleanIp.substring(7);
+    }
+    
+    // 處理 localhost
+    if (cleanIp === '::1' || cleanIp === '127.0.0.1' || cleanIp === 'localhost') {
+      return '127.0.0.1';
+    }
+    
+    // 簡單的 IP 格式驗證
+    const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+    const ipv6Regex = /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/;
+    
+    if (ipv4Regex.test(cleanIp) || ipv6Regex.test(cleanIp)) {
+      return cleanIp;
+    }
+    
+    // 如果無法解析，返回 null
+    logger.warn('Invalid IP address format, setting to null:', { originalIp: ipAddress, cleanedIp: cleanIp });
+    return null;
   }
 
   // 創建活動記錄
-  async create(data: CreateActivityLogRequest): Promise<ActivityLog> {
+  async create(logData: CreateActivityLogRequest): Promise<ActivityLog> {
     try {
+      const pool = this.getDbPool();
+      
+      // 驗證和清理 IP 地址
+      const validIpAddress = this.validateIpAddress(logData.ip_address);
+      
       const query = `
         INSERT INTO activity_logs (user_id, action_type, action_description, ip_address, user_agent)
         VALUES ($1, $2, $3, $4, $5)
         RETURNING *
       `;
-
+      
       const values = [
-        data.user_id || null,
-        data.action_type,
-        data.action_description || null,
-        data.ip_address || null,
-        data.user_agent || null
+        logData.user_id || null,
+        logData.action_type,
+        logData.action_description || null,
+        validIpAddress, // 使用驗證後的 IP 地址
+        logData.user_agent || null
       ];
 
-      const result = await this.pool.query(query, values);
+      const result = await pool.query(query, values);
+      
+      logger.debug('Activity log created', {
+        action_type: logData.action_type,
+        user_id: logData.user_id,
+        ip_address: validIpAddress,
+        original_ip: logData.ip_address
+      });
+      
       return result.rows[0];
-    } catch (error) {
-      logger.error('Error creating activity log:', error);
+    } catch (error: any) {
+      logger.error('Error creating activity log:', {
+        error: error.message,
+        code: error.code,
+        logData: {
+          ...logData,
+          ip_address: this.validateIpAddress(logData.ip_address)
+        }
+      });
       throw new Error('Failed to create activity log');
     }
   }
 
-  // 獲取活動記錄列表（管理員用）
-  async getList(
-    page: number = 1, 
-    limit: number = 20,
-    userId?: string,
-    actionType?: string,
-    startDate?: Date,
-    endDate?: Date
-  ) {
+  // 記錄用戶登錄
+  async logLogin(userId: string, ipAddress?: string, userAgent?: string): Promise<void> {
     try {
+      await this.create({
+        user_id: userId,
+        action_type: 'USER_LOGIN',
+        action_description: 'User logged in successfully',
+        ip_address: ipAddress,
+        user_agent: userAgent
+      });
+    } catch (error) {
+      logger.error('Error logging user login:', error);
+      // 不拋出錯誤，因為日誌記錄失敗不應該影響登錄流程
+    }
+  }
+
+  // 記錄用戶登出
+  async logLogout(userId: string, ipAddress?: string, userAgent?: string): Promise<void> {
+    try {
+      await this.create({
+        user_id: userId,
+        action_type: 'USER_LOGOUT',
+        action_description: 'User logged out',
+        ip_address: ipAddress,
+        user_agent: userAgent
+      });
+    } catch (error) {
+      logger.error('Error logging user logout:', error);
+      // 不拋出錯誤，因為日誌記錄失敗不應該影響登出流程
+    }
+  }
+
+  // 記錄管理員登錄
+  async logAdminLogin(ipAddress?: string, userAgent?: string): Promise<void> {
+    try {
+      await this.create({
+        action_type: 'ADMIN_LOGIN',
+        action_description: 'Administrator logged in successfully',
+        ip_address: ipAddress,
+        user_agent: userAgent
+      });
+    } catch (error) {
+      logger.error('Error logging admin login:', error);
+      // 不拋出錯誤，因為日誌記錄失敗不應該影響登錄流程
+    }
+  }
+
+  // 記錄管理員登出
+  async logAdminLogout(ipAddress?: string, userAgent?: string): Promise<void> {
+    try {
+      await this.create({
+        action_type: 'ADMIN_LOGOUT',
+        action_description: 'Administrator logged out',
+        ip_address: ipAddress,
+        user_agent: userAgent
+      });
+    } catch (error) {
+      logger.error('Error logging admin logout:', error);
+      // 不拋出錯誤，因為日誌記錄失敗不應該影響登出流程
+    }
+  }
+
+  // 記錄用戶管理操作
+  async logUserManagement(action: string, targetUserId: string, details?: string, adminIpAddress?: string): Promise<void> {
+    try {
+      await this.create({
+        action_type: `USER_MANAGEMENT_${action}`,
+        action_description: details || `User ${action.toLowerCase()} operation`,
+        ip_address: adminIpAddress,
+        user_agent: 'Admin Panel'
+      });
+    } catch (error) {
+      logger.error('Error logging user management:', error);
+    }
+  }
+
+  // 記錄計算器使用
+  async logCalculatorUse(userId: string, calculatorType: string, result: any, ipAddress?: string, userAgent?: string): Promise<void> {
+    try {
+      await this.create({
+        user_id: userId,
+        action_type: `CALCULATOR_${calculatorType.toUpperCase()}`,
+        action_description: `Used ${calculatorType} calculator`,
+        ip_address: ipAddress,
+        user_agent: userAgent
+      });
+    } catch (error) {
+      logger.error('Error logging calculator use:', error);
+    }
+  }
+
+  // 獲取活動日誌列表（分頁）
+  async getList(page: number = 1, limit: number = 50, userId?: string) {
+    try {
+      const pool = this.getDbPool();
       const offset = (page - 1) * limit;
-      let whereConditions: string[] = [];
-      let values: any[] = [];
-      let paramCount = 1;
-
-      // 構建 WHERE 條件
-      if (userId) {
-        whereConditions.push(`al.user_id = $${paramCount++}`);
-        values.push(userId);
-      }
-
-      if (actionType) {
-        whereConditions.push(`al.action_type = $${paramCount++}`);
-        values.push(actionType);
-      }
-
-      if (startDate) {
-        whereConditions.push(`al.created_at >= $${paramCount++}`);
-        values.push(startDate);
-      }
-
-      if (endDate) {
-        whereConditions.push(`al.created_at <= $${paramCount++}`);
-        values.push(endDate);
-      }
-
-      const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-      // 獲取總數
-      const countQuery = `
-        SELECT COUNT(*) FROM activity_logs al
-        LEFT JOIN users u ON al.user_id = u.id
-        ${whereClause}
-      `;
-      const countResult = await this.pool.query(countQuery, values);
-      const total = parseInt(countResult.rows[0].count);
-
-      // 獲取記錄列表
-      const query = `
+      
+      let query = `
         SELECT 
           al.*,
-          u.username,
-          u.name as user_name
+          u.username
         FROM activity_logs al
         LEFT JOIN users u ON al.user_id = u.id
-        ${whereClause}
-        ORDER BY al.created_at DESC
-        LIMIT $${paramCount++} OFFSET $${paramCount++}
       `;
-
-      values.push(limit, offset);
-      const result = await this.pool.query(query, values);
-
+      
+      const params: any[] = [];
+      let paramCount = 1;
+      
+      if (userId) {
+        query += ` WHERE al.user_id = $${paramCount++}`;
+        params.push(userId);
+      }
+      
+      query += ` ORDER BY al.created_at DESC LIMIT $${paramCount++} OFFSET $${paramCount++}`;
+      params.push(limit, offset);
+      
+      const result = await pool.query(query, params);
+      
+      // 獲取總數
+      let countQuery = 'SELECT COUNT(*) FROM activity_logs';
+      const countParams: any[] = [];
+      
+      if (userId) {
+        countQuery += ' WHERE user_id = $1';
+        countParams.push(userId);
+      }
+      
+      const countResult = await pool.query(countQuery, countParams);
+      const total = parseInt(countResult.rows[0].count);
+      
       return {
         logs: result.rows,
         total,
@@ -112,227 +238,23 @@ export class ActivityLogModel {
     }
   }
 
-  // 獲取用戶的活動記錄
-  async getUserLogs(
-    userId: string, 
-    page: number = 1, 
-    limit: number = 20,
-    actionType?: string
-  ) {
+  // 清理舊記錄（保留最近 90 天）
+  async cleanup(daysToKeep: number = 90): Promise<number> {
     try {
-      const offset = (page - 1) * limit;
-      let whereConditions = ['user_id = $1'];
-      let values: any[] = [userId];
-      let paramCount = 2;
-
-      if (actionType) {
-        whereConditions.push(`action_type = ${paramCount++}`);
-        values.push(actionType);
-      }
-
-      const whereClause = `WHERE ${whereConditions.join(' AND ')}`;
-
-      // 獲取總數
-      const countQuery = `SELECT COUNT(*) FROM activity_logs ${whereClause}`;
-      const countResult = await this.pool.query(countQuery, values);
-      const total = parseInt(countResult.rows[0].count);
-
-      // 獲取記錄列表
+      const pool = this.getDbPool();
       const query = `
-        SELECT * FROM activity_logs 
-        ${whereClause}
-        ORDER BY created_at DESC
-        LIMIT ${paramCount++} OFFSET ${paramCount++}
+        DELETE FROM activity_logs 
+        WHERE created_at < NOW() - INTERVAL '${daysToKeep} days'
       `;
-
-      values.push(limit, offset);
-      const result = await this.pool.query(query, values);
-
-      return {
-        logs: result.rows,
-        total,
-        page,
-        limit,
-        total_pages: Math.ceil(total / limit)
-      };
-    } catch (error) {
-      logger.error('Error getting user activity logs:', error);
-      throw new Error('Failed to get user activity logs');
-    }
-  }
-
-  // 清理舊的活動記錄（保留最近 N 天）
-  async cleanOldLogs(daysToKeep: number = 90): Promise<number> {
-    try {
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
-
-      const query = 'DELETE FROM activity_logs WHERE created_at < $1';
-      const result = await this.pool.query(query, [cutoffDate]);
       
-      logger.info(`Cleaned ${result.rowCount} old activity logs older than ${daysToKeep} days`);
-      return result.rowCount || 0;
+      const result = await pool.query(query);
+      const deletedCount = result.rowCount || 0;
+      
+      logger.info(`Cleaned up ${deletedCount} old activity logs`);
+      return deletedCount;
     } catch (error) {
-      logger.error('Error cleaning old activity logs:', error);
-      throw new Error('Failed to clean old logs');
+      logger.error('Error cleaning up activity logs:', error);
+      throw new Error('Failed to cleanup activity logs');
     }
-  }
-
-  // 獲取活動類型統計
-  async getActionTypeStats(
-    userId?: string,
-    startDate?: Date,
-    endDate?: Date
-  ) {
-    try {
-      let whereConditions: string[] = [];
-      let values: any[] = [];
-      let paramCount = 1;
-
-      if (userId) {
-        whereConditions.push(`user_id = ${paramCount++}`);
-        values.push(userId);
-      }
-
-      if (startDate) {
-        whereConditions.push(`created_at >= ${paramCount++}`);
-        values.push(startDate);
-      }
-
-      if (endDate) {
-        whereConditions.push(`created_at <= ${paramCount++}`);
-        values.push(endDate);
-      }
-
-      const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-      const query = `
-        SELECT 
-          action_type,
-          COUNT(*) as count,
-          DATE_TRUNC('day', created_at) as date
-        FROM activity_logs
-        ${whereClause}
-        GROUP BY action_type, DATE_TRUNC('day', created_at)
-        ORDER BY date DESC, count DESC
-      `;
-
-      const result = await this.pool.query(query, values);
-      return result.rows;
-    } catch (error) {
-      logger.error('Error getting action type stats:', error);
-      throw new Error('Failed to get action type statistics');
-    }
-  }
-
-  // 記錄用戶登錄
-  async logLogin(userId: string, ipAddress?: string, userAgent?: string): Promise<void> {
-    await this.create({
-      user_id: userId,
-      action_type: 'USER_LOGIN',
-      action_description: 'User logged in successfully',
-      ip_address: ipAddress,
-      user_agent: userAgent
-    });
-  }
-
-  // 記錄用戶登出
-  async logLogout(userId: string, ipAddress?: string, userAgent?: string): Promise<void> {
-    await this.create({
-      user_id: userId,
-      action_type: 'USER_LOGOUT',
-      action_description: 'User logged out',
-      ip_address: ipAddress,
-      user_agent: userAgent
-    });
-  }
-
-  // 記錄管理員登錄
-  async logAdminLogin(ipAddress?: string, userAgent?: string): Promise<void> {
-    await this.create({
-      action_type: 'ADMIN_LOGIN',
-      action_description: 'Administrator logged in successfully',
-      ip_address: ipAddress,
-      user_agent: userAgent
-    });
-  }
-
-  // 記錄 BMI 計算
-  async logBMICalculation(userId: string, recordId: string, ipAddress?: string): Promise<void> {
-    await this.create({
-      user_id: userId,
-      action_type: 'BMI_CALCULATION',
-      action_description: `BMI calculation performed, record ID: ${recordId}`,
-      ip_address: ipAddress
-    });
-  }
-
-  // 記錄 TDEE 計算
-  async logTDEECalculation(userId: string, recordId: string, ipAddress?: string): Promise<void> {
-    await this.create({
-      user_id: userId,
-      action_type: 'TDEE_CALCULATION',
-      action_description: `TDEE calculation performed, record ID: ${recordId}`,
-      ip_address: ipAddress
-    });
-  }
-
-  // 記錄用戶管理操作
-  async logUserManagement(
-    action: 'CREATE' | 'UPDATE' | 'DELETE',
-    targetUserId: string,
-    adminId?: string,
-    ipAddress?: string
-  ): Promise<void> {
-    await this.create({
-      user_id: adminId,
-      action_type: `USER_${action}`,
-      action_description: `User ${action.toLowerCase()} operation on user ID: ${targetUserId}`,
-      ip_address: ipAddress
-    });
-  }
-
-  // 記錄權限管理操作
-  async logPermissionChange(
-    action: 'GRANT' | 'REVOKE',
-    userId: string,
-    projectKey: string,
-    adminId?: string,
-    ipAddress?: string
-  ): Promise<void> {
-    await this.create({
-      user_id: adminId,
-      action_type: `PERMISSION_${action}`,
-      action_description: `Permission ${action.toLowerCase()}ed for user ${userId} on project ${projectKey}`,
-      ip_address: ipAddress
-    });
   }
 }
-
-// ===== 常用活動類型常數 =====
-export const ActivityTypes = {
-  // 用戶相關
-  USER_LOGIN: 'USER_LOGIN',
-  USER_LOGOUT: 'USER_LOGOUT',
-  USER_CREATE: 'USER_CREATE',
-  USER_UPDATE: 'USER_UPDATE',
-  USER_DELETE: 'USER_DELETE',
-  
-  // 管理員相關
-  ADMIN_LOGIN: 'ADMIN_LOGIN',
-  ADMIN_LOGOUT: 'ADMIN_LOGOUT',
-  
-  // 專案計算
-  BMI_CALCULATION: 'BMI_CALCULATION',
-  TDEE_CALCULATION: 'TDEE_CALCULATION',
-  
-  // 權限管理
-  PERMISSION_GRANT: 'PERMISSION_GRANT',
-  PERMISSION_REVOKE: 'PERMISSION_REVOKE',
-  
-  // 系統相關
-  SYSTEM_ERROR: 'SYSTEM_ERROR',
-  SYSTEM_WARNING: 'SYSTEM_WARNING'
-} as const;
-
-export type ActivityType = typeof ActivityTypes[keyof typeof ActivityTypes];
