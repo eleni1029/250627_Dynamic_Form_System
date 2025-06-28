@@ -1,14 +1,14 @@
 #!/bin/bash
 
-# ===== 修復腳本 Part 3 修正版 =====
-echo "🚀 修復執行修復腳本 Part 3..."
+# ===== 修復腳本 Part 3 =====
+echo "🚀 執行修復腳本 Part 3 - BMI 控制器..."
 
-# 8. 修復 BMI 控制器
+# 9. 修復 BMI 控制器
 echo "📝 修復 BMI 控制器..."
-cat > backend/src/projects/bmi/controllers/BMIController.ts << 'BMIEOF'
+cat > backend/src/projects/bmi/controllers/BMIController.ts << 'EOF'
 import { Request, Response } from 'express';
 import { BMIService } from '../services/BMIService';
-import { BMICalculationRequest, BMIHistoryQuery } from '../types/bmi.types';
+import { BMICalculationRequest } from '../models/BMIRecord';
 import { AuthenticatedRequest } from '../../../types/auth.types';
 import { logger } from '../../../utils/logger';
 
@@ -39,10 +39,14 @@ export class BMIController {
         gender: req.body.gender
       };
 
-      const result = await this.bmiService.calculate(userId, calculationData);
+      const result = await this.bmiService.calculateAndSave(userId, calculationData);
 
       if (result.success) {
-        res.status(200).json(result);
+        logger.info(`BMI calculated for user ${userId}`, {
+          bmi: result.data?.bmi,
+          category: result.data?.category
+        });
+        res.status(201).json(result);
       } else {
         res.status(400).json(result);
       }
@@ -51,7 +55,7 @@ export class BMIController {
       logger.error('BMI calculation controller error:', error);
       res.status(500).json({
         success: false,
-        error: 'Internal server error during BMI calculation',
+        error: 'Internal server error while calculating BMI',
         code: 'BMI_CALCULATION_SERVER_ERROR'
       });
     }
@@ -70,21 +74,14 @@ export class BMIController {
         return;
       }
 
-      const query = {
-        page: parseInt(req.query.page as string) || 1,
-        limit: parseInt(req.query.limit as string) || 10
-      };
+      const limit = parseInt(req.query.limit as string) || 50;
+      const result = await this.bmiService.getHistory(userId, limit);
 
-      if (query.page < 1) query.page = 1;
-      if (query.limit < 1 || query.limit > 50) query.limit = 10;
+      logger.debug(`BMI history retrieved for user ${userId}`, {
+        recordCount: result.data?.length || 0
+      });
 
-      const result = await this.bmiService.getHistory(userId, query.page, query.limit);
-
-      if (result.success) {
-        res.status(200).json(result);
-      } else {
-        res.status(400).json(result);
-      }
+      res.status(200).json(result);
 
     } catch (error) {
       logger.error('BMI get history controller error:', error);
@@ -109,14 +106,20 @@ export class BMIController {
         return;
       }
 
-      const result = await this.bmiService.getLatestRecord(userId);
-      res.status(200).json(result);
+      const result = await this.bmiService.getLatest(userId);
+      
+      if (result.success) {
+        logger.debug(`Latest BMI retrieved for user ${userId}`);
+        res.status(200).json(result);
+      } else {
+        res.status(404).json(result);
+      }
 
     } catch (error) {
       logger.error('BMI get latest controller error:', error);
       res.status(500).json({
         success: false,
-        error: 'Internal server error while getting latest BMI record',
+        error: 'Internal server error while getting latest BMI',
         code: 'BMI_LATEST_SERVER_ERROR'
       });
     }
@@ -136,8 +139,14 @@ export class BMIController {
         return;
       }
 
-      const result = await this.bmiService.deleteRecord(userId, recordId);
-      res.status(200).json(result);
+      const result = await this.bmiService.deleteRecord(recordId, userId);
+
+      if (result.success) {
+        logger.info(`BMI record ${recordId} deleted for user ${userId}`);
+        res.status(200).json(result);
+      } else {
+        res.status(404).json(result);
+      }
 
     } catch (error) {
       logger.error('BMI delete record controller error:', error);
@@ -163,7 +172,15 @@ export class BMIController {
       }
 
       const result = await this.bmiService.clearHistory(userId);
-      res.status(200).json(result);
+
+      if (result.success) {
+        logger.info(`BMI history cleared for user ${userId}`, {
+          deletedCount: result.data?.deletedCount
+        });
+        res.status(200).json(result);
+      } else {
+        res.status(400).json(result);
+      }
 
     } catch (error) {
       logger.error('BMI clear history controller error:', error);
@@ -239,6 +256,10 @@ export class BMIController {
     }
   };
 }
-BMIEOF
+EOF
 
-echo "✅ 修復腳本 Part 3 修正版完成!"
+echo "✅ 修復腳本 Part 3 完成!"
+echo "📝 已修復："
+echo "   - BMI 控制器"
+echo ""
+echo "🔄 請執行 Part 4 修復腳本..."

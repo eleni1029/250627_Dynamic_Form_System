@@ -1,15 +1,16 @@
 #!/bin/bash
 
 # ===== 修復腳本 Part 4 =====
-echo "🚀 執行修復腳本 Part 4..."
+echo "🚀 執行修復腳本 Part 4 - TDEE 控制器..."
 
-# 9. 修復 TDEE 控制器
+# 10. 修復 TDEE 控制器
 echo "📝 修復 TDEE 控制器..."
 cat > backend/src/projects/tdee/controllers/TDEEController.ts << 'EOF'
 import { Request, Response } from 'express';
 import { TDEEService } from '../services/TDEEService';
-import { TDEECalculationRequest, TDEEHistoryQuery, ACTIVITY_LEVELS } from '../types/tdee.types';
+import { TDEECalculationRequest } from '../models/TDEERecord';
 import { AuthenticatedRequest } from '../../../types/auth.types';
+import { ACTIVITY_LEVELS } from '../types/tdee.types';
 import { logger } from '../../../utils/logger';
 
 export class TDEEController {
@@ -40,23 +41,16 @@ export class TDEEController {
         activity_level: req.body.activity_level
       };
 
-      const result = await this.tdeeService.calculate(userId, calculationData);
+      const result = await this.tdeeService.calculateAndSave(userId, calculationData);
 
       if (result.success) {
-        logger.info(\`TDEE calculated for user \${userId}\`, {
+        logger.info(`TDEE calculated for user ${userId}`, {
           bmr: result.data?.bmr,
           tdee: result.data?.tdee,
-          bmi: result.data?.bmi,
-          userId
+          activity_level: calculationData.activity_level
         });
-        
-        res.status(200).json(result);
+        res.status(201).json(result);
       } else {
-        logger.warn(\`TDEE calculation failed for user \${userId}\`, {
-          error: result.error,
-          userId
-        });
-        
         res.status(400).json(result);
       }
 
@@ -64,7 +58,7 @@ export class TDEEController {
       logger.error('TDEE calculation controller error:', error);
       res.status(500).json({
         success: false,
-        error: 'Internal server error during TDEE calculation',
+        error: 'Internal server error while calculating TDEE',
         code: 'TDEE_CALCULATION_SERVER_ERROR'
       });
     }
@@ -83,29 +77,14 @@ export class TDEEController {
         return;
       }
 
-      const query: TDEEHistoryQuery = {
-        page: parseInt(req.query.page as string) || 1,
-        limit: parseInt(req.query.limit as string) || 10,
-        startDate: req.query.startDate as string,
-        endDate: req.query.endDate as string
-      };
+      const limit = parseInt(req.query.limit as string) || 50;
+      const result = await this.tdeeService.getHistory(userId, limit);
 
-      if (query.page < 1) query.page = 1;
-      if (query.limit < 1 || query.limit > 50) query.limit = 10;
+      logger.debug(`TDEE history retrieved for user ${userId}`, {
+        recordCount: result.data?.length || 0
+      });
 
-      const result = await this.tdeeService.getHistory(userId, query.page, query.limit);
-
-      if (result.success) {
-        logger.debug(\`TDEE history retrieved for user \${userId}\`, {
-          page: query.page,
-          limit: query.limit,
-          recordCount: result.data?.length || 0
-        });
-        
-        res.status(200).json(result);
-      } else {
-        res.status(400).json(result);
-      }
+      res.status(200).json(result);
 
     } catch (error) {
       logger.error('TDEE get history controller error:', error);
@@ -130,23 +109,20 @@ export class TDEEController {
         return;
       }
 
-      const result = await this.tdeeService.getLatestRecord(userId);
-
+      const result = await this.tdeeService.getLatest(userId);
+      
       if (result.success) {
-        logger.debug(\`Latest TDEE record retrieved for user \${userId}\`, {
-          hasRecord: !!result.data
-        });
-        
+        logger.debug(`Latest TDEE retrieved for user ${userId}`);
         res.status(200).json(result);
       } else {
-        res.status(400).json(result);
+        res.status(404).json(result);
       }
 
     } catch (error) {
       logger.error('TDEE get latest controller error:', error);
       res.status(500).json({
         success: false,
-        error: 'Internal server error while getting latest TDEE record',
+        error: 'Internal server error while getting latest TDEE',
         code: 'TDEE_LATEST_SERVER_ERROR'
       });
     }
@@ -165,16 +141,14 @@ export class TDEEController {
         return;
       }
 
-      const activityLevels = Object.values(ACTIVITY_LEVELS).map(level => ({
-        key: level.key,
-        name: level.name,
-        name_en: level.name_en,
-        description: level.description,
-        description_en: level.description_en,
-        multiplier: level.multiplier
+      const activityLevels = Object.entries(ACTIVITY_LEVELS).map(([key, value]) => ({
+        key,
+        name: value.name,
+        description: value.description,
+        multiplier: value.multiplier
       }));
 
-      logger.debug(\`Activity levels retrieved for user \${userId}\`);
+      logger.debug(`Activity levels retrieved for user ${userId}`);
 
       res.status(200).json({
         success: true,
@@ -206,26 +180,13 @@ export class TDEEController {
         return;
       }
 
-      if (!recordId) {
-        res.status(400).json({
-          success: false,
-          error: 'Record ID is required',
-          code: 'MISSING_RECORD_ID'
-        });
-        return;
-      }
-
-      const result = await this.tdeeService.deleteRecord(userId, recordId);
+      const result = await this.tdeeService.deleteRecord(recordId, userId);
 
       if (result.success) {
-        logger.info(\`TDEE record deleted by user \${userId}\`, {
-          recordId,
-          userId
-        });
-        
+        logger.info(`TDEE record ${recordId} deleted for user ${userId}`);
         res.status(200).json(result);
       } else {
-        res.status(400).json(result);
+        res.status(404).json(result);
       }
 
     } catch (error) {
@@ -254,10 +215,9 @@ export class TDEEController {
       const result = await this.tdeeService.clearHistory(userId);
 
       if (result.success) {
-        logger.info(\`TDEE history cleared by user \${userId}\`, {
-          userId
+        logger.info(`TDEE history cleared for user ${userId}`, {
+          deletedCount: result.data?.deletedCount
         });
-        
         res.status(200).json(result);
       } else {
         res.status(400).json(result);
@@ -289,7 +249,7 @@ export class TDEEController {
       const result = await this.tdeeService.getUserStats(userId);
 
       if (result.success) {
-        logger.debug(\`TDEE stats retrieved for user \${userId}\`);
+        logger.debug(`TDEE stats retrieved for user ${userId}`);
         res.status(200).json(result);
       } else {
         res.status(400).json(result);
@@ -328,7 +288,7 @@ export class TDEEController {
 
       const validation = this.tdeeService.validateCalculationData(calculationData);
 
-      logger.debug(\`TDEE data validation for user \${userId}\`, {
+      logger.debug(`TDEE data validation for user ${userId}`, {
         isValid: validation.isValid,
         errors: validation.errors
       });

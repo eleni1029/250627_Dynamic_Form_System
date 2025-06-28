@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ===== 修復腳本 Part 2 =====
-echo "🚀 執行修復腳本 Part 2..."
+echo "🚀 執行修復腳本 Part 2 - 中間件與驗證..."
 
 # 5. 修復 validation middleware
 echo "📝 修復驗證中間件..."
@@ -53,15 +53,15 @@ export const validationMiddleware = (req: Request, res: Response, next: NextFunc
 
 const validateNumberRange = (value: number, min: number, max: number, fieldName: string): { isValid: boolean; message: string } => {
   if (isNaN(value)) {
-    return { isValid: false, message: \`\${fieldName} must be a valid number\` };
+    return { isValid: false, message: `${fieldName} must be a valid number` };
   }
   
   if (value < min) {
-    return { isValid: false, message: \`\${fieldName} must be at least \${min}\` };
+    return { isValid: false, message: `${fieldName} must be at least ${min}` };
   }
   
   if (value > max) {
-    return { isValid: false, message: \`\${fieldName} must not exceed \${max}\` };
+    return { isValid: false, message: `${fieldName} must not exceed ${max}` };
   }
   
   return { isValid: true, message: '' };
@@ -84,15 +84,6 @@ export const validateBodyMetrics = (req: Request, res: Response, next: NextFunct
     const numWeight = parseFloat(weight);
     const numAge = age ? parseInt(age) : undefined;
 
-    if (isNaN(numHeight) || isNaN(numWeight)) {
-      res.status(400).json({
-        success: false,
-        error: 'Height and weight must be valid numbers',
-        code: 'INVALID_NUMBER_FORMAT'
-      });
-      return;
-    }
-
     const heightValidation = validateNumberRange(numHeight, 50, 300, 'Height');
     if (!heightValidation.isValid) {
       res.status(400).json({
@@ -114,15 +105,6 @@ export const validateBodyMetrics = (req: Request, res: Response, next: NextFunct
     }
 
     if (numAge !== undefined) {
-      if (isNaN(numAge)) {
-        res.status(400).json({
-          success: false,
-          error: 'Age must be a valid number',
-          code: 'INVALID_AGE_FORMAT'
-        });
-        return;
-      }
-
       const ageValidation = validateNumberRange(numAge, 1, 150, 'Age');
       if (!ageValidation.isValid) {
         res.status(400).json({
@@ -161,93 +143,101 @@ export const validateBodyMetrics = (req: Request, res: Response, next: NextFunct
   }
 };
 
-export const validateIdParam = (paramName: string = 'id') => {
+export const validateIdParam = (paramName: string) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     try {
       const id = req.params[paramName];
-
+      
       if (!id) {
         res.status(400).json({
           success: false,
-          error: \`\${paramName} parameter is required\`,
+          error: `${paramName} parameter is required`,
           code: 'MISSING_ID_PARAMETER'
         });
         return;
       }
 
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-      if (!uuidRegex.test(id)) {
+      if (typeof id !== 'string' || id.trim().length === 0) {
         res.status(400).json({
           success: false,
-          error: \`Invalid \${paramName} format\`,
+          error: `${paramName} must be a non-empty string`,
           code: 'INVALID_ID_FORMAT'
         });
         return;
       }
 
       next();
-
     } catch (error) {
-      logger.error(\`ID validation error for \${paramName}:\`, error);
+      logger.error('ID param validation error:', error);
       res.status(500).json({
         success: false,
-        error: 'ID validation processing error',
-        code: 'ID_VALIDATION_ERROR'
+        error: 'ID parameter validation processing error',
+        code: 'ID_PARAM_VALIDATION_ERROR'
       });
     }
   };
 };
 
-export const isValidImageFile = (mimetype: string): boolean => {
-  const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-  return allowedTypes.includes(mimetype);
-};
+export const validatePaginationParams = (req: Request, res: Response, next: NextFunction): void => {
+  try {
+    const { page, limit } = req.query;
+    
+    let numPage = 1;
+    let numLimit = 20;
 
-export const sanitizeInput = (input: string): string => {
-  if (typeof input !== 'string') {
-    return '';
+    if (page) {
+      numPage = parseInt(page as string);
+      if (isNaN(numPage) || numPage < 1) {
+        res.status(400).json({
+          success: false,
+          error: 'Page must be a positive integer',
+          code: 'INVALID_PAGE_PARAMETER'
+        });
+        return;
+      }
+    }
+
+    if (limit) {
+      numLimit = parseInt(limit as string);
+      if (isNaN(numLimit) || numLimit < 1 || numLimit > 100) {
+        res.status(400).json({
+          success: false,
+          error: 'Limit must be between 1 and 100',
+          code: 'INVALID_LIMIT_PARAMETER'
+        });
+        return;
+      }
+    }
+
+    req.query.page = numPage.toString();
+    req.query.limit = numLimit.toString();
+
+    next();
+  } catch (error) {
+    logger.error('Pagination validation error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Pagination validation processing error',
+      code: 'PAGINATION_VALIDATION_ERROR'
+    });
   }
-  return input.trim();
 };
 EOF
 
 # 6. 修復 auth.types.ts
 echo "📝 修復認證類型檔案..."
 cat > backend/src/types/auth.types.ts << 'EOF'
-export interface User {
-  id: string;
-  username: string;
-  name: string;
-  avatar_url?: string;
-  is_active: boolean;
-  created_at: Date;
-  updated_at: Date;
-}
-
-export interface UserWithPassword extends User {
-  password_hash: string;
-}
-
-export interface LoginRequest {
-  username: string;
-  password: string;
-}
-
-export interface LoginResponse {
-  success: boolean;
-  user?: SessionUser;
-  message?: string;
-  error?: string;
-}
+import { Request } from 'express';
 
 export interface SessionUser {
   id: string;
   username: string;
   name: string;
+  email?: string;
   avatar_url?: string;
   is_active: boolean;
   created_at: Date;
-  updated_at: Date;
+  last_login_at?: Date;
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -255,95 +245,45 @@ export interface AuthenticatedRequest extends Request {
   isAdmin?: boolean;
 }
 
-declare module 'express-session' {
-  interface SessionData {
-    user?: SessionUser;
-    isAdmin?: boolean;
-    adminLastActivity?: number;
-    adminUser?: {
-      username: string;
-      loginTime?: Date;
-    };
-  }
-}
-
-declare global {
-  namespace Express {
-    interface Request {
-      user?: SessionUser;
-      isAdmin?: boolean;
-    }
-  }
-}
-
-export interface CreateUserRequest {
+export interface LoginRequest {
   username: string;
   password: string;
-  name: string;
-  is_active?: boolean;
+  rememberMe?: boolean;
 }
 
-export interface UpdateUserRequest {
-  name?: string;
-  password?: string;
-  is_active?: boolean;
+export interface LoginResponse {
+  success: boolean;
+  message: string;
+  user?: SessionUser;
+  token?: string;
+  expiresAt?: Date;
 }
 
-export interface UserListResponse {
-  users: User[];
-  total: number;
-  page: number;
-  limit: number;
+export interface AuthStatus {
+  isAuthenticated: boolean;
+  isAdmin: boolean;
+  user?: SessionUser;
+  session?: {
+    id: string;
+    expiresAt: Date;
+    lastActivity: Date;
+  };
 }
 
-export interface UserPermission {
-  id: string;
-  user_id: string;
-  project_id: string;
-  granted_at: Date;
-  granted_by: string;
+export interface SessionConfig {
+  secret: string;
+  maxAge: number;
+  secure: boolean;
+  httpOnly: boolean;
+  sameSite: boolean | 'none' | 'lax' | 'strict';
 }
 
-export interface UserWithPermissions extends User {
-  permissions: {
-    project_key: string;
-    project_name: string;
-    granted_at: Date;
-  }[];
-}
-
-export interface Project {
-  id: string;
-  project_key: string;
-  project_name: string;
-  description?: string;
-  is_active: boolean;
-  created_at: Date;
-}
-
-export interface ActivityLog {
-  id: string;
-  user_id?: string;
-  action_type: string;
-  action_description?: string;
-  ip_address?: string;
-  user_agent?: string;
-  created_at: Date;
-}
-
-export interface CreateActivityLogRequest {
-  user_id?: string;
-  action_type: string;
-  action_description?: string;
-  ip_address?: string;
-  user_agent?: string;
-}
-
-export interface ActivityLogListResponse {
-  logs: (ActivityLog & { username?: string })[];
-  total: number;
-  page: number;
-  limit: number;
+export interface PermissionCheck {
+  hasPermission: boolean;
+  projectId?: string;
+  projectKey?: string;
+  userId: string;
+  permissionType: string;
 }
 
 export interface ApiResponse<T = any> {
@@ -352,50 +292,8 @@ export interface ApiResponse<T = any> {
   message?: string;
   error?: string;
   code?: string;
-}
-
-export interface PaginationQuery {
-  page?: number;
-  limit?: number;
-  sort?: string;
-  order?: 'asc' | 'desc';
-}
-
-export interface PaginationResponse<T> {
-  data: T[];
-  total: number;
-  page: number;
-  limit: number;
-  total_pages: number;
-}
-
-export interface ProjectPermission {
-  user_id: string;
-  project_id: string;
-  username: string;
-  user_name: string;
-  project_key: string;
-  project_name: string;
-  granted_at: Date;
-  granted_by: string;
-}
-
-export interface GrantPermissionRequest {
-  user_id: string;
-  project_id: string;
-}
-
-export interface RevokePermissionRequest {
-  user_id: string;
-  project_id: string;
-}
-
-export interface FileUploadResponse {
-  success: boolean;
-  filename?: string;
+  timestamp?: string;
   url?: string;
-  message?: string;
-  error?: string;
 }
 EOF
 
@@ -473,7 +371,7 @@ export const validateTDEECalculation = (req: Request, res: Response, next: NextF
       const validLevels = Object.keys(ACTIVITY_LEVELS).join(', ');
       res.status(400).json({
         success: false,
-        error: \`Activity level must be one of: \${validLevels}\`,
+        error: `Activity level must be one of: ${validLevels}`,
         code: 'INVALID_ACTIVITY_LEVEL'
       });
       return;
@@ -496,10 +394,78 @@ export const validateTDEECalculation = (req: Request, res: Response, next: NextF
 };
 EOF
 
+# 8. 創建 TDEE 類型檔案
+echo "📝 創建 TDEE 類型檔案..."
+mkdir -p backend/src/projects/tdee/types
+cat > backend/src/projects/tdee/types/tdee.types.ts << 'EOF'
+export const ACTIVITY_LEVELS = {
+  sedentary: {
+    multiplier: 1.2,
+    description: 'Little or no exercise',
+    name: 'Sedentary'
+  },
+  light: {
+    multiplier: 1.375,
+    description: 'Light exercise/sports 1-3 days/week',
+    name: 'Lightly Active'
+  },
+  moderate: {
+    multiplier: 1.55,
+    description: 'Moderate exercise/sports 3-5 days/week',
+    name: 'Moderately Active'
+  },
+  active: {
+    multiplier: 1.725,
+    description: 'Hard exercise/sports 6-7 days a week',
+    name: 'Very Active'
+  },
+  very_active: {
+    multiplier: 1.9,
+    description: 'Very hard exercise/sports & physical job or training twice a day',
+    name: 'Extra Active'
+  }
+} as const;
+
+export type ActivityLevel = keyof typeof ACTIVITY_LEVELS;
+export type Gender = 'male' | 'female';
+
+export interface TDEECalculationData {
+  height: number;
+  weight: number;
+  age: number;
+  gender: Gender;
+  activity_level: ActivityLevel;
+}
+
+export interface TDEEResult {
+  bmr: number;
+  tdee: number;
+  activityInfo: {
+    level: ActivityLevel;
+    multiplier: number;
+    description: string;
+    name: string;
+  };
+}
+
+export interface TDEEStatsResponse {
+  totalRecords: number;
+  averageTDEE: number;
+  averageBMR: number;
+  mostUsedActivityLevel: string;
+  activityLevelBreakdown: Array<{
+    activity_level: string;
+    count: number;
+    percentage: number;
+  }>;
+}
+EOF
+
 echo "✅ 修復腳本 Part 2 完成!"
 echo "📝 已修復："
 echo "   - 驗證中間件"
 echo "   - 認證類型檔案" 
 echo "   - TDEE 驗證中間件"
+echo "   - TDEE 類型定義"
 echo ""
 echo "🔄 請執行 Part 3 修復腳本..."

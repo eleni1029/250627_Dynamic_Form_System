@@ -1,27 +1,52 @@
 import { Request } from 'express';
 
-export interface User {
+export interface SessionUser {
   id: string;
   username: string;
   name: string;
+  email?: string;
   avatar_url?: string;
   is_active: boolean;
   created_at: Date;
-  updated_at: Date;
+  last_login_at?: Date;
 }
-
-export interface SessionUser extends User {}
 
 export interface AuthenticatedRequest extends Request {
   user?: SessionUser;
   isAdmin?: boolean;
 }
 
-declare global {
-  namespace Express {
-    interface Request {
-      user?: SessionUser;
-      isAdmin?: boolean;
-    }
-  }
+export interface LoginRequest {
+  username: string;
+  password: string;
+  rememberMe?: boolean;
+}
+
+export interface LoginResponse {
+  success: boolean;
+  message: string;
+  user?: SessionUser;
+  token?: string;
+  expiresAt?: Date;
+}
+
+export interface AuthStatus {
+  isAuthenticated: boolean;
+  isAdmin: boolean;
+  user?: SessionUser;
+  session?: {
+    id: string;
+    expiresAt: Date;
+    lastActivity: Date;
+  };
+}
+
+export interface ApiResponse<T = any> {
+  success: boolean;
+  data?: T;
+  message?: string;
+  error?: string;
+  code?: string;
+  timestamp?: string;
+  url?: string;
 }
