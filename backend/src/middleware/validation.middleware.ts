@@ -1,4 +1,6 @@
-// backend/src/middleware/validation.middleware.ts - 驗證中間件
+// ===== 完整的驗證中間件 =====
+// backend/src/middleware/validation.middleware.ts
+
 import { Request, Response, NextFunction } from 'express';
 import { validationResult } from 'express-validator';
 import { logger } from '../utils/logger';
@@ -42,6 +44,114 @@ export const validationMiddleware = (req: Request, res: Response, next: NextFunc
       success: false,
       error: 'Validation processing error',
       code: 'VALIDATION_PROCESSING_ERROR'
+    });
+  }
+};
+
+// 數值範圍驗證輔助函數
+const validateNumberRange = (value: number, min: number, max: number, fieldName: string): { isValid: boolean; message: string } => {
+  if (isNaN(value)) {
+    return { isValid: false, message: `${fieldName} must be a valid number` };
+  }
+  
+  if (value < min) {
+    return { isValid: false, message: `${fieldName} must be at least ${min}` };
+  }
+  
+  if (value > max) {
+    return { isValid: false, message: `${fieldName} must not exceed ${max}` };
+  }
+  
+  return { isValid: true, message: '' };
+};
+
+// 身體數據驗證（用於 BMI 計算）- 增強版
+export const validateBodyMetrics = (req: Request, res: Response, next: NextFunction): void => {
+  try {
+    const { height, weight, age, gender } = req.body;
+
+    // 檢查必要欄位
+    if (!height || !weight) {
+      res.status(400).json({
+        success: false,
+        error: 'Height and weight are required',
+        code: 'MISSING_REQUIRED_FIELDS'
+      });
+      return;
+    }
+
+    // 數值類型驗證
+    const numHeight = parseFloat(height);
+    const numWeight = parseFloat(weight);
+
+    if (isNaN(numHeight) || isNaN(numWeight)) {
+      res.status(400).json({
+        success: false,
+        error: 'Height and weight must be valid numbers',
+        code: 'INVALID_NUMBER_FORMAT'
+      });
+      return;
+    }
+
+    // 身高範圍驗證 (國際標準: 50-300cm)
+    if (numHeight < 50 || numHeight > 300) {
+      res.status(400).json({
+        success: false,
+        error: 'Height must be between 50-300 cm',
+        code: 'INVALID_HEIGHT_RANGE'
+      });
+      return;
+    }
+
+    // 體重範圍驗證 (國際標準: 10-500kg)
+    if (numWeight < 10 || numWeight > 500) {
+      res.status(400).json({
+        success: false,
+        error: 'Weight must be between 10-500 kg',
+        code: 'INVALID_WEIGHT_RANGE'
+      });
+      return;
+    }
+
+    // 年齡驗證 (可選欄位)
+    if (age !== undefined) {
+      const numAge = parseInt(age);
+      if (isNaN(numAge) || numAge < 1 || numAge > 150) {
+        res.status(400).json({
+          success: false,
+          error: 'Age must be between 1-150 years',
+          code: 'INVALID_AGE_RANGE'
+        });
+        return;
+      }
+    }
+
+    // 性別驗證 (可選欄位)
+    if (gender !== undefined) {
+      const validGenders = ['male', 'female', 'other'];
+      if (!validGenders.includes(gender)) {
+        res.status(400).json({
+          success: false,
+          error: 'Gender must be male, female, or other',
+          code: 'INVALID_GENDER'
+        });
+        return;
+      }
+    }
+
+    // 將驗證後的數值存回 req.body
+    req.body.height = numHeight;
+    req.body.weight = numWeight;
+    if (age) req.body.age = parseInt(age);
+
+    next();
+
+  } catch (error) {
+    logger.error('Body metrics validation error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Validation processing error',
+      code: 'VALIDATION_ERROR'
     });
   }
 };
@@ -100,6 +210,89 @@ export const sanitizeInput = (input: string): string => {
   return input.trim();
 };
 
+// 通用數值驗證中間件
+export const validateNumericField = (fieldName: string, min: number, max: number, required: boolean = true) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    try {
+      const value = req.body[fieldName];
+
+      if (required && (value === undefined || value === null || value === '')) {
+        res.status(400).json({
+          success: false,
+          error: `${fieldName} is required`,
+          code: 'MISSING_REQUIRED_FIELD'
+        });
+        return;
+      }
+
+      if (value !== undefined && value !== null && value !== '') {
+        const numValue = parseFloat(value);
+        const validation = validateNumberRange(numValue, min, max, fieldName);
+        
+        if (!validation.isValid) {
+          res.status(400).json({
+            success: false,
+            error: validation.message,
+            code: 'INVALID_FIELD_VALUE'
+          });
+          return;
+        }
+
+        req.body[fieldName] = numValue;
+      }
+
+      next();
+
+    } catch (error) {
+      logger.error(`Validation error for field ${fieldName}:`, error);
+      res.status(500).json({
+        success: false,
+        error: 'Field validation processing error',
+        code: 'FIELD_VALIDATION_ERROR'
+      });
+    }
+  };
+};
+
+// ID 參數驗證中間件
+export const validateIdParam = (paramName: string = 'id') => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    try {
+      const id = req.params[paramName];
+
+      if (!id) {
+        res.status(400).json({
+          success: false,
+          error: `${paramName} parameter is required`,
+          code: 'MISSING_ID_PARAMETER'
+        });
+        return;
+      }
+
+      // 基本 UUID 格式驗證
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(id)) {
+        res.status(400).json({
+          success: false,
+          error: `Invalid ${paramName} format`,
+          code: 'INVALID_ID_FORMAT'
+        });
+        return;
+      }
+
+      next();
+
+    } catch (error) {
+      logger.error(`ID validation error for param ${paramName}:`, error);
+      res.status(500).json({
+        success: false,
+        error: 'ID validation processing error',
+        code: 'ID_VALIDATION_ERROR'
+      });
+    }
+  };
+};
+
 // 分頁參數驗證中間件
 export const paginationValidation = (req: Request, res: Response, next: NextFunction): void => {
   try {
@@ -134,6 +327,47 @@ export const paginationValidation = (req: Request, res: Response, next: NextFunc
     req.query.order = order;
 
     next();
+  } catch (error) {
+    logger.error('Pagination validation error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Pagination validation processing error',
+      code: 'PAGINATION_VALIDATION_ERROR'
+    });
+  }
+};
+
+// 增強的分頁驗證（與上面的相容）
+export const validatePagination = (req: Request, res: Response, next: NextFunction): void => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+
+    // 驗證分頁參數範圍
+    if (page < 1) {
+      res.status(400).json({
+        success: false,
+        error: 'Page must be greater than 0',
+        code: 'INVALID_PAGE_PARAMETER'
+      });
+      return;
+    }
+
+    if (limit < 1 || limit > 100) {
+      res.status(400).json({
+        success: false,
+        error: 'Limit must be between 1 and 100',
+        code: 'INVALID_LIMIT_PARAMETER'
+      });
+      return;
+    }
+
+    // 將驗證後的值設置回 query
+    req.query.page = page.toString();
+    req.query.limit = limit.toString();
+
+    next();
+
   } catch (error) {
     logger.error('Pagination validation error:', error);
     res.status(500).json({
@@ -203,79 +437,5 @@ export const dateRangeValidation = (req: Request, res: Response, next: NextFunct
   }
 };
 
-// 數值範圍驗證函數
-export const validateNumberRange = (
-  value: number, 
-  min: number, 
-  max: number, 
-  fieldName: string
-): { isValid: boolean; message?: string } => {
-  if (isNaN(value)) {
-    return { isValid: false, message: `${fieldName} must be a valid number` };
-  }
-  
-  if (value < min) {
-    return { isValid: false, message: `${fieldName} must be at least ${min}` };
-  }
-  
-  if (value > max) {
-    return { isValid: false, message: `${fieldName} must not exceed ${max}` };
-  }
-  
-  return { isValid: true };
-};
-
-// 身體數據驗證（用於 BMI/TDEE 計算）
-export const validateBodyMetrics = (req: Request, res: Response, next: NextFunction): void => {
-  try {
-    const { height, weight, age } = req.body;
-
-    // 驗證身高（單位：cm，範圍：50-300）
-    if (height !== undefined) {
-      const heightValidation = validateNumberRange(height, 50, 300, 'Height');
-      if (!heightValidation.isValid) {
-        res.status(400).json({
-          success: false,
-          error: heightValidation.message,
-          code: 'INVALID_HEIGHT'
-        });
-        return;
-      }
-    }
-
-    // 驗證體重（單位：kg，範圍：10-500）
-    if (weight !== undefined) {
-      const weightValidation = validateNumberRange(weight, 10, 500, 'Weight');
-      if (!weightValidation.isValid) {
-        res.status(400).json({
-          success: false,
-          error: weightValidation.message,
-          code: 'INVALID_WEIGHT'
-        });
-        return;
-      }
-    }
-
-    // 驗證年齡（範圍：1-150）
-    if (age !== undefined) {
-      const ageValidation = validateNumberRange(age, 1, 150, 'Age');
-      if (!ageValidation.isValid) {
-        res.status(400).json({
-          success: false,
-          error: ageValidation.message,
-          code: 'INVALID_AGE'
-        });
-        return;
-      }
-    }
-
-    next();
-  } catch (error) {
-    logger.error('Body metrics validation error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Body metrics validation processing error',
-      code: 'BODY_METRICS_VALIDATION_ERROR'
-    });
-  }
-};
+// 匯出數值範圍驗證函數（保持相容性）
+export { validateNumberRange };
