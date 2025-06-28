@@ -1,5 +1,4 @@
-// ===== TDEE 專案模組完整版 =====
-// backend/src/projects/tdee/controllers/TDEEController.ts
+// ===== 檔案 8: backend/src/projects/tdee/controllers/TDEEController.ts =====
 
 import { Request, Response } from 'express';
 import { TDEEService } from '../services/TDEEService';

@@ -1,5 +1,4 @@
-// ===== TDEE 專案模組完整版 =====
-// backend/src/projects/tdee/services/TDEEService.ts
+// ===== 檔案 7: backend/src/projects/tdee/services/TDEEService.ts - Part 1 =====
 
 import { 
   TDEECalculationRequest, 
@@ -175,6 +174,9 @@ export class TDEEService {
       };
     }
   }
+
+// ===== 檔案 7 續: backend/src/projects/tdee/services/TDEEService.ts - Part 2 =====
+// 接續 Part 1，在 calculate 方法之後加入以下方法：
 
   // 獲取用戶歷史記錄
   async getHistory(userId: string, page: number = 1, limit: number = 10): Promise<TDEEApiResponse<TDEERecord[]>> {
