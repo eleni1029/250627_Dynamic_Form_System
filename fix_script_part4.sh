@@ -1,20 +1,24 @@
-// ===== 修復檔案 3: backend/src/projects/bmi/controllers/BMIController.ts =====
-// 修復認證邏輯、完善控制器方法、統一類型使用
+#!/bin/bash
 
+# ===== 修復腳本 Part 4 =====
+echo "🚀 執行修復腳本 Part 4..."
+
+# 9. 修復 TDEE 控制器
+echo "📝 修復 TDEE 控制器..."
+cat > backend/src/projects/tdee/controllers/TDEEController.ts << 'EOF'
 import { Request, Response } from 'express';
-import { BMIService } from '../services/BMIService';
-import { BMICalculationRequest, BMIHistoryQuery } from '../types/bmi.types';
+import { TDEEService } from '../services/TDEEService';
+import { TDEECalculationRequest, TDEEHistoryQuery, ACTIVITY_LEVELS } from '../types/tdee.types';
 import { AuthenticatedRequest } from '../../../types/auth.types';
 import { logger } from '../../../utils/logger';
 
-export class BMIController {
-  private bmiService: BMIService;
+export class TDEEController {
+  private tdeeService: TDEEService;
 
   constructor() {
-    this.bmiService = new BMIService();
+    this.tdeeService = new TDEEService();
   }
 
-  // POST /api/projects/bmi/calculate - BMI 計算
   calculate = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const userId = req.user?.id;
@@ -28,27 +32,27 @@ export class BMIController {
         return;
       }
 
-      // 從中間件已驗證的 body 中獲取數據
-      const calculationData: BMICalculationRequest = {
+      const calculationData: TDEECalculationRequest = {
         height: req.body.height,
         weight: req.body.weight,
         age: req.body.age,
-        gender: req.body.gender
+        gender: req.body.gender,
+        activity_level: req.body.activity_level
       };
 
-      // 執行計算
-      const result = await this.bmiService.calculate(userId, calculationData);
+      const result = await this.tdeeService.calculate(userId, calculationData);
 
       if (result.success) {
-        logger.info(`BMI calculated for user ${userId}`, {
+        logger.info(\`TDEE calculated for user \${userId}\`, {
+          bmr: result.data?.bmr,
+          tdee: result.data?.tdee,
           bmi: result.data?.bmi,
-          category: result.data?.category,
           userId
         });
         
         res.status(200).json(result);
       } else {
-        logger.warn(`BMI calculation failed for user ${userId}`, {
+        logger.warn(\`TDEE calculation failed for user \${userId}\`, {
           error: result.error,
           userId
         });
@@ -57,16 +61,15 @@ export class BMIController {
       }
 
     } catch (error) {
-      logger.error('BMI calculation controller error:', error);
+      logger.error('TDEE calculation controller error:', error);
       res.status(500).json({
         success: false,
-        error: 'Internal server error during BMI calculation',
-        code: 'BMI_CALCULATION_SERVER_ERROR'
+        error: 'Internal server error during TDEE calculation',
+        code: 'TDEE_CALCULATION_SERVER_ERROR'
       });
     }
   };
 
-  // GET /api/projects/bmi/history - 獲取歷史記錄
   getHistory = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const userId = req.user?.id;
@@ -80,21 +83,20 @@ export class BMIController {
         return;
       }
 
-      const query: BMIHistoryQuery = {
+      const query: TDEEHistoryQuery = {
         page: parseInt(req.query.page as string) || 1,
         limit: parseInt(req.query.limit as string) || 10,
         startDate: req.query.startDate as string,
         endDate: req.query.endDate as string
       };
 
-      // 驗證分頁參數
       if (query.page < 1) query.page = 1;
       if (query.limit < 1 || query.limit > 50) query.limit = 10;
 
-      const result = await this.bmiService.getHistory(userId, query.page, query.limit);
+      const result = await this.tdeeService.getHistory(userId, query.page, query.limit);
 
       if (result.success) {
-        logger.debug(`BMI history retrieved for user ${userId}`, {
+        logger.debug(\`TDEE history retrieved for user \${userId}\`, {
           page: query.page,
           limit: query.limit,
           recordCount: result.data?.length || 0
@@ -106,16 +108,15 @@ export class BMIController {
       }
 
     } catch (error) {
-      logger.error('BMI get history controller error:', error);
+      logger.error('TDEE get history controller error:', error);
       res.status(500).json({
         success: false,
-        error: 'Internal server error while getting BMI history',
-        code: 'BMI_HISTORY_SERVER_ERROR'
+        error: 'Internal server error while getting TDEE history',
+        code: 'TDEE_HISTORY_SERVER_ERROR'
       });
     }
   };
 
-  // GET /api/projects/bmi/latest - 獲取最新記錄（用於表單預填）
   getLatest = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const userId = req.user?.id;
@@ -129,10 +130,10 @@ export class BMIController {
         return;
       }
 
-      const result = await this.bmiService.getLatestRecord(userId);
+      const result = await this.tdeeService.getLatestRecord(userId);
 
       if (result.success) {
-        logger.debug(`Latest BMI record retrieved for user ${userId}`, {
+        logger.debug(\`Latest TDEE record retrieved for user \${userId}\`, {
           hasRecord: !!result.data
         });
         
@@ -142,16 +143,55 @@ export class BMIController {
       }
 
     } catch (error) {
-      logger.error('BMI get latest controller error:', error);
+      logger.error('TDEE get latest controller error:', error);
       res.status(500).json({
         success: false,
-        error: 'Internal server error while getting latest BMI record',
-        code: 'BMI_LATEST_SERVER_ERROR'
+        error: 'Internal server error while getting latest TDEE record',
+        code: 'TDEE_LATEST_SERVER_ERROR'
       });
     }
   };
 
-  // DELETE /api/projects/bmi/records/:id - 刪除特定記錄
+  getActivityLevels = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: 'User authentication required',
+          code: 'AUTH_REQUIRED'
+        });
+        return;
+      }
+
+      const activityLevels = Object.values(ACTIVITY_LEVELS).map(level => ({
+        key: level.key,
+        name: level.name,
+        name_en: level.name_en,
+        description: level.description,
+        description_en: level.description_en,
+        multiplier: level.multiplier
+      }));
+
+      logger.debug(\`Activity levels retrieved for user \${userId}\`);
+
+      res.status(200).json({
+        success: true,
+        data: activityLevels,
+        message: 'Activity levels retrieved successfully'
+      });
+
+    } catch (error) {
+      logger.error('TDEE get activity levels controller error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error while getting activity levels',
+        code: 'TDEE_ACTIVITY_LEVELS_SERVER_ERROR'
+      });
+    }
+  };
+
   deleteRecord = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const userId = req.user?.id;
@@ -175,10 +215,10 @@ export class BMIController {
         return;
       }
 
-      const result = await this.bmiService.deleteRecord(userId, recordId);
+      const result = await this.tdeeService.deleteRecord(userId, recordId);
 
       if (result.success) {
-        logger.info(`BMI record deleted by user ${userId}`, {
+        logger.info(\`TDEE record deleted by user \${userId}\`, {
           recordId,
           userId
         });
@@ -189,16 +229,15 @@ export class BMIController {
       }
 
     } catch (error) {
-      logger.error('BMI delete record controller error:', error);
+      logger.error('TDEE delete record controller error:', error);
       res.status(500).json({
         success: false,
-        error: 'Internal server error while deleting BMI record',
-        code: 'BMI_DELETE_SERVER_ERROR'
+        error: 'Internal server error while deleting TDEE record',
+        code: 'TDEE_DELETE_SERVER_ERROR'
       });
     }
   };
 
-  // DELETE /api/projects/bmi/history - 清空所有歷史記錄
   clearHistory = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const userId = req.user?.id;
@@ -212,10 +251,10 @@ export class BMIController {
         return;
       }
 
-      const result = await this.bmiService.clearHistory(userId);
+      const result = await this.tdeeService.clearHistory(userId);
 
       if (result.success) {
-        logger.info(`BMI history cleared by user ${userId}`, {
+        logger.info(\`TDEE history cleared by user \${userId}\`, {
           userId
         });
         
@@ -225,16 +264,15 @@ export class BMIController {
       }
 
     } catch (error) {
-      logger.error('BMI clear history controller error:', error);
+      logger.error('TDEE clear history controller error:', error);
       res.status(500).json({
         success: false,
-        error: 'Internal server error while clearing BMI history',
-        code: 'BMI_CLEAR_HISTORY_SERVER_ERROR'
+        error: 'Internal server error while clearing TDEE history',
+        code: 'TDEE_CLEAR_HISTORY_SERVER_ERROR'
       });
     }
   };
 
-  // GET /api/projects/bmi/stats - 獲取用戶統計資訊
   getUserStats = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const userId = req.user?.id;
@@ -248,26 +286,25 @@ export class BMIController {
         return;
       }
 
-      const result = await this.bmiService.getUserStats(userId);
+      const result = await this.tdeeService.getUserStats(userId);
 
       if (result.success) {
-        logger.debug(`BMI stats retrieved for user ${userId}`);
+        logger.debug(\`TDEE stats retrieved for user \${userId}\`);
         res.status(200).json(result);
       } else {
         res.status(400).json(result);
       }
 
     } catch (error) {
-      logger.error('BMI get stats controller error:', error);
+      logger.error('TDEE get stats controller error:', error);
       res.status(500).json({
         success: false,
-        error: 'Internal server error while getting BMI stats',
-        code: 'BMI_STATS_SERVER_ERROR'
+        error: 'Internal server error while getting TDEE stats',
+        code: 'TDEE_STATS_SERVER_ERROR'
       });
     }
   };
 
-  // POST /api/projects/bmi/validate - 驗證計算數據（測試用）
   validateData = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const userId = req.user?.id;
@@ -281,16 +318,17 @@ export class BMIController {
         return;
       }
 
-      const calculationData: BMICalculationRequest = {
+      const calculationData: TDEECalculationRequest = {
         height: req.body.height,
         weight: req.body.weight,
         age: req.body.age,
-        gender: req.body.gender
+        gender: req.body.gender,
+        activity_level: req.body.activity_level
       };
 
-      const validation = this.bmiService.validateCalculationData(calculationData);
+      const validation = this.tdeeService.validateCalculationData(calculationData);
 
-      logger.debug(`BMI data validation for user ${userId}`, {
+      logger.debug(\`TDEE data validation for user \${userId}\`, {
         isValid: validation.isValid,
         errors: validation.errors
       });
@@ -302,12 +340,19 @@ export class BMIController {
       });
 
     } catch (error) {
-      logger.error('BMI validate data controller error:', error);
+      logger.error('TDEE validate data controller error:', error);
       res.status(500).json({
         success: false,
-        error: 'Internal server error while validating BMI data',
-        code: 'BMI_VALIDATE_SERVER_ERROR'
+        error: 'Internal server error while validating TDEE data',
+        code: 'TDEE_VALIDATE_SERVER_ERROR'
       });
     }
   };
 }
+EOF
+
+echo "✅ 修復腳本 Part 4 完成!"
+echo "📝 已修復："
+echo "   - TDEE 控制器"
+echo ""
+echo "🔄 請執行 Part 5 修復腳本..."
