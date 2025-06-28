@@ -10,7 +10,13 @@
     "init-db": "ts-node src/scripts/init-db.ts",
     "migrate": "ts-node src/scripts/init-db.ts",
     "seed": "ts-node src/database/seed.ts",
-    "create-users": "ts-node src/scripts/create-test-users.ts"
+    "create-users": "ts-node src/scripts/create-test-users.ts",
+    "test:calculations": "ts-node src/scripts/test-calculations.ts",
+    "init:projects": "ts-node src/scripts/init-projects.ts",
+    "health:check": "curl http://localhost:3000/api/health",
+    "test:bmi": "curl -X POST http://localhost:3000/api/projects/bmi/calculate -H \"Content-Type: application/json\" -d '{\"height\":175,\"weight\":70,\"age\":30,\"gender\":\"male\"}'",
+    "test:tdee": "curl -X POST http://localhost:3000/api/projects/tdee/calculate -H \"Content-Type: application/json\" -d '{\"height\":175,\"weight\":70,\"age\":30,\"gender\":\"male\",\"activity_level\":\"moderate\"}'",
+    "projects:status": "curl http://localhost:3000/api/health/projects"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -44,7 +50,10 @@
     "express",
     "typescript",
     "postgresql",
-    "form-system"
+    "form-system",
+    "bmi-calculator",
+    "tdee-calculator",
+    "health-tracker"
   ],
   "author": "Your Name",
   "license": "MIT"

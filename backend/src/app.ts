@@ -17,6 +17,10 @@ import userRoutes from './routes/user.routes';
 import adminRoutes from './routes/admin.routes';
 import projectsRoutes from './routes/projects.routes';
 
+import { registerAllProjectModules } from './config/projects.config';
+import { createProjectsRoutes } from './routes/projects.routes';
+import { createHealthRoutes } from './routes/health.routes';
+
 // 環境變數載入
 dotenv.config();
 
@@ -121,6 +125,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/projects', projectsRoutes);
+app.use('/api/health', createHealthRoutes());
+app.use('/api/projects', createProjectsRoutes());
+registerAllProjectModules(app);
 
 // ===== 根路徑 =====
 app.get('/', (req, res) => {
