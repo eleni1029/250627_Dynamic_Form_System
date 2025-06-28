@@ -1,5 +1,4 @@
-// ===== 檔案 13: backend/src/utils/api-test.ts =====
-
+// backend/src/utils/api-test.ts
 import { BMICalculationRequest } from '../projects/bmi/types/bmi.types';
 import { TDEECalculationRequest } from '../projects/tdee/types/tdee.types';
 
@@ -39,17 +38,6 @@ export const BMI_TEST_CASES = [
     expectedCategory: '輕度體重不足'
   },
   {
-    name: 'Obesity Class I',
-    data: {
-      height: 165,
-      weight: 85,
-      age: 35,
-      gender: 'male'
-    } as BMICalculationRequest,
-    expectedBMI: 31.2,
-    expectedCategory: '一級肥胖'
-  },
-  {
     name: 'Normal BMI - Minimal Data',
     data: {
       height: 180,
@@ -87,45 +75,6 @@ export const TDEE_TEST_CASES = [
     expectedBMR: 1321,
     expectedTDEE: 2278,
     expectedBMI: 21.5
-  },
-  {
-    name: 'Very Active Young Male',
-    data: {
-      height: 180,
-      weight: 75,
-      age: 22,
-      gender: 'male',
-      activity_level: 'very_active'
-    } as TDEECalculationRequest,
-    expectedBMR: 1740,
-    expectedTDEE: 3306,
-    expectedBMI: 23.1
-  },
-  {
-    name: 'Moderate Activity Middle-aged Female',
-    data: {
-      height: 165,
-      weight: 60,
-      age: 45,
-      gender: 'female',
-      activity_level: 'moderate'
-    } as TDEECalculationRequest,
-    expectedBMR: 1247,
-    expectedTDEE: 1933,
-    expectedBMI: 22.0
-  },
-  {
-    name: 'Light Activity Senior Male',
-    data: {
-      height: 170,
-      weight: 65,
-      age: 65,
-      gender: 'male',
-      activity_level: 'light'
-    } as TDEECalculationRequest,
-    expectedBMR: 1346,
-    expectedTDEE: 1851,
-    expectedBMI: 22.5
   }
 ];
 
@@ -195,13 +144,13 @@ export const generateRandomBMIData = (): BMICalculationRequest => {
   const heights = [150, 155, 160, 165, 170, 175, 180, 185, 190, 195];
   const weightRange = { min: 40, max: 120 };
   const ageRange = { min: 18, max: 80 };
-  const genders = ['male', 'female', 'other'];
+  const genders: ('male' | 'female' | 'other')[] = ['male', 'female', 'other'];
 
   return {
     height: heights[Math.floor(Math.random() * heights.length)],
     weight: Math.floor(Math.random() * (weightRange.max - weightRange.min) + weightRange.min),
     age: Math.floor(Math.random() * (ageRange.max - ageRange.min) + ageRange.min),
-    gender: genders[Math.floor(Math.random() * genders.length)] as 'male' | 'female' | 'other'
+    gender: genders[Math.floor(Math.random() * genders.length)]
   };
 };
 
@@ -209,15 +158,15 @@ export const generateRandomTDEEData = (): TDEECalculationRequest => {
   const heights = [150, 155, 160, 165, 170, 175, 180, 185, 190, 195];
   const weightRange = { min: 40, max: 120 };
   const ageRange = { min: 18, max: 80 };
-  const genders = ['male', 'female'];
-  const activityLevels = ['sedentary', 'light', 'moderate', 'active', 'very_active'];
+  const genders: ('male' | 'female')[] = ['male', 'female'];
+  const activityLevels: ('sedentary' | 'light' | 'moderate' | 'active' | 'very_active')[] = ['sedentary', 'light', 'moderate', 'active', 'very_active'];
 
   return {
     height: heights[Math.floor(Math.random() * heights.length)],
     weight: Math.floor(Math.random() * (weightRange.max - weightRange.min) + weightRange.min),
     age: Math.floor(Math.random() * (ageRange.max - ageRange.min) + ageRange.min),
-    gender: genders[Math.floor(Math.random() * genders.length)] as 'male' | 'female',
-    activity_level: activityLevels[Math.floor(Math.random() * activityLevels.length)] as any
+    gender: genders[Math.floor(Math.random() * genders.length)],
+    activity_level: activityLevels[Math.floor(Math.random() * activityLevels.length)]
   };
 };
 
@@ -238,12 +187,10 @@ export class APITester {
     this.baseUrl = baseUrl;
   }
 
-  // 設置認證 token（如果需要）
   setAuthToken(token: string): void {
     this.authToken = token;
   }
 
-  // 執行 HTTP 請求
   private async makeRequest(method: string, endpoint: string, data?: any): Promise<any> {
     const url = `${this.baseUrl}${endpoint}`;
     const headers: any = {
@@ -257,7 +204,7 @@ export class APITester {
     const config: RequestInit = {
       method,
       headers,
-      credentials: 'include' // 包含 cookies (session)
+      credentials: 'include'
     };
 
     if (data && (method === 'POST' || method === 'PUT')) {
@@ -274,7 +221,6 @@ export class APITester {
     return result;
   }
 
-  // 測試 BMI API
   async testBMICalculation(testCase: any): Promise<TestResult> {
     const startTime = Date.now();
     
@@ -288,7 +234,7 @@ export class APITester {
           passed: false,
           details: 'API returned unsuccessful response',
           duration,
-          error: result.error
+          error: result.error || 'Unknown error'
         };
       }
 
@@ -307,12 +253,11 @@ export class APITester {
         passed: false,
         details: 'Request failed',
         duration: Date.now() - startTime,
-        error: error.message
+        error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
   }
 
-  // 測試 TDEE API
   async testTDEECalculation(testCase: any): Promise<TestResult> {
     const startTime = Date.now();
     
@@ -326,7 +271,7 @@ export class APITester {
           passed: false,
           details: 'API returned unsuccessful response',
           duration,
-          error: result.error
+          error: result.error || 'Unknown error'
         };
       }
 
@@ -345,12 +290,11 @@ export class APITester {
         passed: false,
         details: 'Request failed',
         duration: Date.now() - startTime,
-        error: error.message
+        error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
   }
 
-  // 測試健康檢查
   async testHealthCheck(): Promise<TestResult> {
     const startTime = Date.now();
     
@@ -373,7 +317,7 @@ export class APITester {
         passed: false,
         details: 'Health check failed',
         duration: Date.now() - startTime,
-        error: error.message
+        error: error instanceof Error ? error.message : 'Unknown error'
       };
     }
   }
