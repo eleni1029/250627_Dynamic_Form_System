@@ -1,8 +1,10 @@
-// ===== 檔案 8: backend/src/projects/tdee/controllers/TDEEController.ts =====
+// ===== 修復檔案 4: backend/src/projects/tdee/controllers/TDEEController.ts =====
+// 修復認證邏輯、完善控制器方法、統一類型使用
 
 import { Request, Response } from 'express';
 import { TDEEService } from '../services/TDEEService';
-import { TDEECalculationRequest, TDEEHistoryQuery } from '../types/tdee.types';
+import { TDEECalculationRequest, TDEEHistoryQuery, ACTIVITY_LEVELS } from '../types/tdee.types';
+import { AuthenticatedRequest } from '../../../types/auth.types';
 import { logger } from '../../../utils/logger';
 
 export class TDEEController {
@@ -13,92 +15,46 @@ export class TDEEController {
   }
 
   // POST /api/projects/tdee/calculate - TDEE 計算
-  calculate = async (req: Request, res: Response): Promise<void> => {
+  calculate = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const userId = req.session.user?.id;
+      const userId = req.user?.id;
       
       if (!userId) {
         res.status(401).json({
           success: false,
-          error: 'User not authenticated',
-          code: 'NOT_AUTHENTICATED'
+          error: 'User authentication required',
+          code: 'AUTH_REQUIRED'
         });
         return;
       }
 
+      // 從中間件已驗證的 body 中獲取數據
       const calculationData: TDEECalculationRequest = {
-        height: parseFloat(req.body.height),
-        weight: parseFloat(req.body.weight),
-        age: parseInt(req.body.age),
+        height: req.body.height,
+        weight: req.body.weight,
+        age: req.body.age,
         gender: req.body.gender,
         activity_level: req.body.activity_level
       };
-
-      // 基本數值驗證
-      if (isNaN(calculationData.height) || isNaN(calculationData.weight) || isNaN(calculationData.age)) {
-        res.status(400).json({
-          success: false,
-          error: 'Height, weight, and age must be valid numbers',
-          code: 'INVALID_INPUT_FORMAT'
-        });
-        return;
-      }
-
-      // 範圍驗證
-      if (calculationData.height < 50 || calculationData.height > 300) {
-        res.status(400).json({
-          success: false,
-          error: 'Height must be between 50-300 cm',
-          code: 'INVALID_HEIGHT_RANGE'
-        });
-        return;
-      }
-
-      if (calculationData.weight < 10 || calculationData.weight > 500) {
-        res.status(400).json({
-          success: false,
-          error: 'Weight must be between 10-500 kg',
-          code: 'INVALID_WEIGHT_RANGE'
-        });
-        return;
-      }
-
-      if (calculationData.age < 1 || calculationData.age > 150) {
-        res.status(400).json({
-          success: false,
-          error: 'Age must be between 1-150 years',
-          code: 'INVALID_AGE_RANGE'
-        });
-        return;
-      }
-
-      // 性別驗證
-      if (!['male', 'female'].includes(calculationData.gender)) {
-        res.status(400).json({
-          success: false,
-          error: 'Gender must be either male or female',
-          code: 'INVALID_GENDER'
-        });
-        return;
-      }
-
-      // 活動等級驗證
-      const validActivityLevels = ['sedentary', 'light', 'moderate', 'active', 'very_active'];
-      if (!validActivityLevels.includes(calculationData.activity_level)) {
-        res.status(400).json({
-          success: false,
-          error: 'Invalid activity level',
-          code: 'INVALID_ACTIVITY_LEVEL'
-        });
-        return;
-      }
 
       // 執行計算
       const result = await this.tdeeService.calculate(userId, calculationData);
 
       if (result.success) {
+        logger.info(`TDEE calculated for user ${userId}`, {
+          bmr: result.data?.bmr,
+          tdee: result.data?.tdee,
+          bmi: result.data?.bmi,
+          userId
+        });
+        
         res.status(200).json(result);
       } else {
+        logger.warn(`TDEE calculation failed for user ${userId}`, {
+          error: result.error,
+          userId
+        });
+        
         res.status(400).json(result);
       }
 
@@ -113,22 +69,24 @@ export class TDEEController {
   };
 
   // GET /api/projects/tdee/history - 獲取歷史記錄
-  getHistory = async (req: Request, res: Response): Promise<void> => {
+  getHistory = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const userId = req.session.user?.id;
+      const userId = req.user?.id;
       
       if (!userId) {
         res.status(401).json({
           success: false,
-          error: 'User not authenticated',
-          code: 'NOT_AUTHENTICATED'
+          error: 'User authentication required',
+          code: 'AUTH_REQUIRED'
         });
         return;
       }
 
       const query: TDEEHistoryQuery = {
         page: parseInt(req.query.page as string) || 1,
-        limit: parseInt(req.query.limit as string) || 10
+        limit: parseInt(req.query.limit as string) || 10,
+        startDate: req.query.startDate as string,
+        endDate: req.query.endDate as string
       };
 
       // 驗證分頁參數
@@ -138,6 +96,12 @@ export class TDEEController {
       const result = await this.tdeeService.getHistory(userId, query.page, query.limit);
 
       if (result.success) {
+        logger.debug(`TDEE history retrieved for user ${userId}`, {
+          page: query.page,
+          limit: query.limit,
+          recordCount: result.data?.length || 0
+        });
+        
         res.status(200).json(result);
       } else {
         res.status(400).json(result);
@@ -153,16 +117,16 @@ export class TDEEController {
     }
   };
 
-  // GET /api/projects/tdee/latest - 獲取最新記錄
-  getLatest = async (req: Request, res: Response): Promise<void> => {
+  // GET /api/projects/tdee/latest - 獲取最新記錄（用於表單預填）
+  getLatest = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const userId = req.session.user?.id;
+      const userId = req.user?.id;
       
       if (!userId) {
         res.status(401).json({
           success: false,
-          error: 'User not authenticated',
-          code: 'NOT_AUTHENTICATED'
+          error: 'User authentication required',
+          code: 'AUTH_REQUIRED'
         });
         return;
       }
@@ -170,6 +134,10 @@ export class TDEEController {
       const result = await this.tdeeService.getLatestRecord(userId);
 
       if (result.success) {
+        logger.debug(`Latest TDEE record retrieved for user ${userId}`, {
+          hasRecord: !!result.data
+        });
+        
         res.status(200).json(result);
       } else {
         res.status(400).json(result);
@@ -185,17 +153,59 @@ export class TDEEController {
     }
   };
 
-  // DELETE /api/projects/tdee/records/:id - 刪除記錄
-  deleteRecord = async (req: Request, res: Response): Promise<void> => {
+  // GET /api/projects/tdee/activity-levels - 獲取活動等級配置
+  getActivityLevels = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const userId = req.session.user?.id;
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: 'User authentication required',
+          code: 'AUTH_REQUIRED'
+        });
+        return;
+      }
+
+      // 返回活動等級配置
+      const activityLevels = Object.values(ACTIVITY_LEVELS).map(level => ({
+        key: level.key,
+        name: level.name,
+        name_en: level.name_en,
+        description: level.description,
+        description_en: level.description_en,
+        multiplier: level.multiplier
+      }));
+
+      logger.debug(`Activity levels retrieved for user ${userId}`);
+
+      res.status(200).json({
+        success: true,
+        data: activityLevels,
+        message: 'Activity levels retrieved successfully'
+      });
+
+    } catch (error) {
+      logger.error('TDEE get activity levels controller error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error while getting activity levels',
+        code: 'TDEE_ACTIVITY_LEVELS_SERVER_ERROR'
+      });
+    }
+  };
+
+  // DELETE /api/projects/tdee/records/:id - 刪除特定記錄
+  deleteRecord = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const userId = req.user?.id;
       const recordId = req.params.id;
       
       if (!userId) {
         res.status(401).json({
           success: false,
-          error: 'User not authenticated',
-          code: 'NOT_AUTHENTICATED'
+          error: 'User authentication required',
+          code: 'AUTH_REQUIRED'
         });
         return;
       }
@@ -212,9 +222,14 @@ export class TDEEController {
       const result = await this.tdeeService.deleteRecord(userId, recordId);
 
       if (result.success) {
+        logger.info(`TDEE record deleted by user ${userId}`, {
+          recordId,
+          userId
+        });
+        
         res.status(200).json(result);
       } else {
-        res.status(404).json(result);
+        res.status(400).json(result);
       }
 
     } catch (error) {
@@ -227,16 +242,16 @@ export class TDEEController {
     }
   };
 
-  // DELETE /api/projects/tdee/history - 清空歷史記錄
-  clearHistory = async (req: Request, res: Response): Promise<void> => {
+  // DELETE /api/projects/tdee/history - 清空所有歷史記錄
+  clearHistory = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const userId = req.session.user?.id;
+      const userId = req.user?.id;
       
       if (!userId) {
         res.status(401).json({
           success: false,
-          error: 'User not authenticated',
-          code: 'NOT_AUTHENTICATED'
+          error: 'User authentication required',
+          code: 'AUTH_REQUIRED'
         });
         return;
       }
@@ -244,6 +259,10 @@ export class TDEEController {
       const result = await this.tdeeService.clearHistory(userId);
 
       if (result.success) {
+        logger.info(`TDEE history cleared by user ${userId}`, {
+          userId
+        });
+        
         res.status(200).json(result);
       } else {
         res.status(400).json(result);
@@ -254,37 +273,21 @@ export class TDEEController {
       res.status(500).json({
         success: false,
         error: 'Internal server error while clearing TDEE history',
-        code: 'TDEE_CLEAR_SERVER_ERROR'
-      });
-    }
-  };
-
-  // GET /api/projects/tdee/activity-levels - 獲取活動等級配置
-  getActivityLevels = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const result = this.tdeeService.getActivityLevels();
-      res.status(200).json(result);
-
-    } catch (error) {
-      logger.error('TDEE get activity levels controller error:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Internal server error while getting activity levels',
-        code: 'TDEE_ACTIVITY_LEVELS_SERVER_ERROR'
+        code: 'TDEE_CLEAR_HISTORY_SERVER_ERROR'
       });
     }
   };
 
   // GET /api/projects/tdee/stats - 獲取用戶統計資訊
-  getUserStats = async (req: Request, res: Response): Promise<void> => {
+  getUserStats = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const userId = req.session.user?.id;
+      const userId = req.user?.id;
       
       if (!userId) {
         res.status(401).json({
           success: false,
-          error: 'User not authenticated',
-          code: 'NOT_AUTHENTICATED'
+          error: 'User authentication required',
+          code: 'AUTH_REQUIRED'
         });
         return;
       }
@@ -292,33 +295,50 @@ export class TDEEController {
       const result = await this.tdeeService.getUserStats(userId);
 
       if (result.success) {
+        logger.debug(`TDEE stats retrieved for user ${userId}`);
         res.status(200).json(result);
       } else {
         res.status(400).json(result);
       }
 
     } catch (error) {
-      logger.error('TDEE get user stats controller error:', error);
+      logger.error('TDEE get stats controller error:', error);
       res.status(500).json({
         success: false,
-        error: 'Internal server error while getting user statistics',
+        error: 'Internal server error while getting TDEE stats',
         code: 'TDEE_STATS_SERVER_ERROR'
       });
     }
   };
 
   // POST /api/projects/tdee/validate - 驗證計算數據（測試用）
-  validateData = async (req: Request, res: Response): Promise<void> => {
+  validateData = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: 'User authentication required',
+          code: 'AUTH_REQUIRED'
+        });
+        return;
+      }
+
       const calculationData: TDEECalculationRequest = {
-        height: parseFloat(req.body.height),
-        weight: parseFloat(req.body.weight),
-        age: parseInt(req.body.age),
+        height: req.body.height,
+        weight: req.body.weight,
+        age: req.body.age,
         gender: req.body.gender,
         activity_level: req.body.activity_level
       };
 
       const validation = this.tdeeService.validateCalculationData(calculationData);
+
+      logger.debug(`TDEE data validation for user ${userId}`, {
+        isValid: validation.isValid,
+        errors: validation.errors
+      });
 
       res.status(200).json({
         success: true,
@@ -330,8 +350,8 @@ export class TDEEController {
       logger.error('TDEE validate data controller error:', error);
       res.status(500).json({
         success: false,
-        error: 'Internal server error during data validation',
-        code: 'TDEE_VALIDATION_SERVER_ERROR'
+        error: 'Internal server error while validating TDEE data',
+        code: 'TDEE_VALIDATE_SERVER_ERROR'
       });
     }
   };
