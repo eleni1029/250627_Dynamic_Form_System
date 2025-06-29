@@ -1,31 +1,70 @@
+import { query } from '../database/connection';
+import { EncryptionUtil } from '../utils/encryption';
 import { logger } from '../utils/logger';
 import { LoginRequest, SessionUser, LoginResponse } from '../types/auth.types';
 
 export class AuthService {
   async login(credentials: LoginRequest, ipAddress?: string, userAgent?: string): Promise<LoginResponse> {
-    logger.info('Login attempt for:', credentials.username);
-    
-    // 簡化的登錄邏輯
-    if (credentials.username === 'test' && credentials.password === 'test123') {
-      const user: SessionUser = {
-        id: '1',
-        username: credentials.username,
-        name: 'Test User',
-        is_active: true,
+    try {
+      logger.info('Login attempt for:', credentials.username);
+      
+      // 查詢用戶
+      const result = await query(
+        'SELECT id, username, password_hash, name, avatar_url, is_active FROM users WHERE username = $1 AND is_active = true',
+        [credentials.username]
+      );
+      
+      if (result.rows.length === 0) {
+        logger.warn('User not found:', credentials.username);
+        return {
+          success: false,
+          message: 'Invalid username or password'
+        };
+      }
+      
+      const user = result.rows[0];
+      
+      // 驗證密碼
+      const isValidPassword = await EncryptionUtil.verifyPassword(credentials.password, user.password_hash);
+      
+      if (!isValidPassword) {
+        logger.warn('Invalid password for user:', credentials.username);
+        return {
+          success: false,
+          message: 'Invalid username or password'
+        };
+      }
+      
+      // 記錄登錄活動
+      await query(
+        'INSERT INTO activity_logs (user_id, action_type, action_description, ip_address, user_agent) VALUES ($1, $2, $3, $4, $5)',
+        [user.id, 'LOGIN', 'User login successful', ipAddress, userAgent]
+      );
+      
+      const sessionUser: SessionUser = {
+        id: user.id,
+        username: user.username,
+        name: user.name,
+        avatar_url: user.avatar_url,
+        is_active: user.is_active,
         created_at: new Date()
       };
+      
+      logger.info('Login successful for user:', credentials.username);
       
       return {
         success: true,
         message: 'Login successful',
-        user
+        user: sessionUser
+      };
+      
+    } catch (error) {
+      logger.error('Login error:', error);
+      return {
+        success: false,
+        message: 'Internal server error'
       };
     }
-    
-    return {
-      success: false,
-      message: 'Invalid username or password'
-    };
   }
 
   async adminLogin(credentials: LoginRequest, ipAddress?: string, userAgent?: string): Promise<LoginResponse> {

@@ -139,20 +139,3 @@ app.get('/api/health', (req, res) => {
     }
   });
 });
-
-// API 健康檢查
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    services: {
-      database: 'connected',
-      session: 'active',
-      auth: 'ready',
-      projects: {
-        bmi: 'ready',
-        tdee: 'ready'
-      }
-    }
-  });
-});
