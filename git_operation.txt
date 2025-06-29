@@ -1,157 +1,3 @@
-# 🚀 Dynamic Form System - 專案模塊總覽
-
-## 📋 專案架構概況
-
-**技術棧：** Vue 3 + TypeScript + Element Plus + Pinia (前端) + Node.js + Express + PostgreSQL (後端)
-
----
-
-## ✅ 已完成模塊
-
-### 🏗️ **基礎架構模塊**
-- ✅ **項目結構設計** - 完整的前後端目錄結構
-- ✅ **開發環境配置** - Docker、package.json、TypeScript 配置
-- ✅ **PostgreSQL 17 資料庫** - 完整安裝、配置、連接池
-- ✅ **資料庫遷移系統** - 自動化建表、索引、基礎數據
-
-### 🗄️ **資料庫層**
-- ✅ **資料庫設計** - 8個核心表結構（users, projects, permissions, sessions, bmi_records, tdee_records, activity_logs）
-- ✅ **資料模型** - User, Permission, BMIRecord, TDEERecord, ActivityLog 模型
-- ✅ **索引優化** - 查詢性能優化索引
-- ✅ **測試數據** - 預設用戶、專案、權限數據
-
-### 🔧 **後端核心架構**
-- ✅ **Express 應用結構** - 中間件、路由、錯誤處理
-- ✅ **安全性配置** - CORS、Helmet、Rate Limiting
-- ✅ **Session 管理** - PostgreSQL 存儲的 Session
-- ✅ **日誌系統** - 結構化日誌記錄
-- ✅ **工具函數** - 加密、驗證、數據庫查詢
-
-### 🎯 **業務邏輯層**
-- ✅ **服務層架構** - AuthService, UserService, AdminService, BMIService, TDEEService
-- ✅ **BMI 計算邏輯** - 完整的 BMI 計算和分類
-- ✅ **TDEE 計算邏輯** - 基礎代謝率和總能量消耗計算
-- ✅ **權限管理邏輯** - 用戶-專案權限映射
-
----
-
-## 🔄 進行中模塊
-
-### 🚧 **API 控制器層**
-- 🔄 **路由框架** - 基礎路由結構已建立，但需要實現具體業務邏輯
-- 🔄 **中間件** - 認證和權限中間件已創建但為簡化版本
-
----
-
-## 📅 待開始模塊
-
-### 🔐 **認證系統 API**
-- ⏳ **用戶登錄 API** - `POST /api/auth/login`
-- ⏳ **管理員登錄 API** - `POST /api/auth/admin/login`
-- ⏳ **登出 API** - `POST /api/auth/logout`
-- ⏳ **用戶資訊 API** - `GET /api/user/profile`
-- ⏳ **Session 驗證** - 完整的 Session 驗證邏輯
-
-### 📊 **專案功能 API**
-- ⏳ **BMI 計算器 API**
-  - `POST /api/projects/bmi/calculate` - BMI 計算
-  - `GET /api/projects/bmi/history` - 歷史記錄
-  - `DELETE /api/projects/bmi/records/:id` - 刪除記錄
-- ⏳ **TDEE 計算器 API**
-  - `POST /api/projects/tdee/calculate` - TDEE 計算
-  - `GET /api/projects/tdee/history` - 歷史記錄
-  - `DELETE /api/projects/tdee/records/:id` - 刪除記錄
-
-### 👥 **管理後臺 API**
-- ⏳ **用戶管理 API**
-  - `GET /api/admin/users` - 用戶列表
-  - `POST /api/admin/users` - 創建用戶
-  - `PUT /api/admin/users/:id` - 更新用戶
-  - `DELETE /api/admin/users/:id` - 刪除用戶
-  - `POST /api/admin/users/:id/avatar` - 上傳頭像
-- ⏳ **權限管理 API**
-  - `GET /api/admin/permissions` - 權限列表
-  - `POST /api/admin/permissions/grant` - 授予權限
-  - `DELETE /api/admin/permissions/revoke` - 撤銷權限
-- ⏳ **活動記錄 API**
-  - `GET /api/admin/logs` - 活動記錄列表
-  - `DELETE /api/admin/logs/clean` - 清理舊記錄
-
-### 🎨 **前端開發**
-- ⏳ **Vue 3 + Vite 基礎架構**
-- ⏳ **Element Plus UI 庫集成**
-- ⏳ **Pinia 狀態管理**
-- ⏳ **路由系統** - Vue Router 4
-
-### 🖥️ **用戶端頁面**
-- ⏳ **登錄頁面** - RWD 響應式設計
-- ⏳ **用戶儀表板** - 項目選擇器、用戶頭像
-- ⏳ **BMI 計算器頁面** - 表單、結果顯示、歷史記錄
-- ⏳ **TDEE 計算器頁面** - 表單、結果顯示、歷史記錄
-
-### 🔧 **管理後臺頁面**
-- ⏳ **管理員登錄頁**
-- ⏳ **用戶管理頁面** - 用戶 CRUD 操作
-- ⏳ **權限管理頁面** - 權限配置界面
-- ⏳ **活動記錄頁面** - 操作日誌查看
-
-### 📱 **前端核心組件**
-- ⏳ **通用組件**
-  - AppHeader.vue - 頁面頭部
-  - ProjectSelector.vue - 專案選擇器
-  - UserAvatar.vue - 用戶頭像
-  - LoadingSpinner.vue - 載入動畫
-- ⏳ **表單組件**
-  - BaseForm.vue - 基礎表單
-  - FormField.vue - 表單欄位
-
-### 🔄 **狀態管理**
-- ⏳ **認證狀態** - 用戶登錄狀態、權限信息
-- ⏳ **專案狀態** - 當前選中專案、歷史記錄
-- ⏳ **管理狀態** - 用戶列表、權限配置
-
-### 📦 **部署與優化**
-- ⏳ **Railway 部署配置**
-- ⏳ **環境變數管理**
-- ⏳ **生產環境優化**
-- ⏳ **錯誤監控和日誌**
-
----
-
-## 🎯 當前優先級
-
-### **立即可開始（高優先級）**
-1. **認證 API 實現** - 完善用戶登錄功能
-2. **BMI 計算器 API** - 第一個完整的業務功能
-3. **前端基礎架構** - Vue 3 + Element Plus 設置
-
-### **中期開發（中優先級）**
-4. **TDEE 計算器 API** - 第二個業務功能
-5. **用戶端前端頁面** - BMI/TDEE 計算器界面
-6. **管理後臺 API** - 用戶和權限管理
-
-### **後期完善（低優先級）**
-7. **管理後臺前端** - 管理界面開發
-8. **部署和優化** - 生產環境準備
-
----
-
-## 📊 進度統計
-
-**總體進度：** 約 35% 完成
-
-- **基礎架構：** ✅ 100% 完成
-- **資料庫層：** ✅ 100% 完成  
-- **後端核心：** ✅ 85% 完成
-- **API 層：** 🔄 15% 完成
-- **前端開發：** ⏳ 0% 開始
-- **部署優化：** ⏳ 0% 開始
-
-**下一個里程碑：** 完成認證 API + BMI 計算器 API，達到 50% 進度
-
---
-
-
 --
 我們現在啟動一個專案，名為 Dynamic_form_System
 我們正在進行一個專案，名為 Dynamic_form_System
@@ -172,7 +18,7 @@
       3. 第一階段的導入專案：
          1. BMI計算器
          2. TDEE計算器
-      4. 專案各自需要有保存用戶最近一次輸入，但是不保存計算結果歷史的功能。
+      4. 專案各自需要有保存用戶歷史資料的功能。
       5. 每個專案需要獨立文件夾，日後拓展只能根據專案加入文件夾，然後在配置文件夾加入該路徑，並擴展資料庫。
       6. 第一階段暫時不做的東西：
          1. 不做授權登錄的功能。
@@ -202,11 +48,6 @@
       7. 支付管理
       8. 用戶等級管理
 
--- 
-這個文件過大，我們採用這個方式：每寫到超過800行就開始下一個part，
-請區分為多個part，一次性提供，現在開始，謝謝。
-
-
 -
 
 a. GIT 連接
@@ -226,7 +67,6 @@ c. 強制更新到 git 上
 git add .
 git commit -m "常規更新"
 git push origin main --force
-
 
 -
 啟動 Docker
