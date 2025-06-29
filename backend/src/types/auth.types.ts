@@ -41,6 +41,39 @@ export interface AuthStatus {
   };
 }
 
+export interface CreateUserRequest {
+  username: string;
+  name: string;
+  password: string;
+  avatar_url?: string;
+}
+
+export interface UpdateUserRequest {
+  name?: string;
+  password?: string;
+  avatar_url?: string;
+}
+
+export interface UserWithPermissions extends SessionUser {
+  permissions: string[];
+  projects: Array<{
+    id: string;
+    key: string;
+    name: string;
+    hasPermission: boolean;
+  }>;
+}
+
+export interface GrantPermissionRequest {
+  userId: string;
+  projectKey: string;
+}
+
+export interface RevokePermissionRequest {
+  userId: string;
+  projectKey: string;
+}
+
 export interface ApiResponse<T = any> {
   success: boolean;
   data?: T;

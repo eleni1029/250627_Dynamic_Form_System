@@ -49,3 +49,6 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction) 
     });
   }
 };
+
+export const userAuthMiddleware = authMiddleware;
+export const activeUserMiddleware = authMiddleware;

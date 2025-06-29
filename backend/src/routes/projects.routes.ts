@@ -1,75 +1,49 @@
-// backend/src/routes/projects.routes.ts
 import { Router } from 'express';
+import { createBMIRoutes } from '../projects/bmi/routes/bmi.routes';
+import { createTDEERoutes } from '../projects/tdee/routes/tdee.routes';
 import { authMiddleware } from '../middleware/auth.middleware';
-import { getUserAccessibleProjects, validateProjectAccess, PROJECT_CONFIGS } from '../config/projects.config';
+import { logger } from '../utils/logger';
 
-export const createProjectsRoutes = (): Router => {
-  const router = Router();
+const router = Router();
 
-  // 所有專案相關路由都需要認證
-  router.use(authMiddleware);
+// 確保所有專案路由都需要認證
+router.use(authMiddleware);
 
-  // GET /api/projects - 獲取用戶可訪問的專案列表
-  router.get('/', (req, res) => {
-    try {
-      const userPermissions = ['bmi_access', 'tdee_access']; // 簡化版權限
-      const accessibleProjects = getUserAccessibleProjects(userPermissions);
+// 註冊專案路由
+router.use('/bmi', createBMIRoutes());
+router.use('/tdee', createTDEERoutes());
 
-      res.json({
-        success: true,
-        data: accessibleProjects,
-        message: `Found ${accessibleProjects.length} accessible projects`
-      });
-
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: 'Failed to get accessible projects',
-        code: 'GET_PROJECTS_ERROR'
-      });
-    }
-  });
-
-  // GET /api/projects/:projectKey - 獲取特定專案資訊
-  router.get('/:projectKey', (req, res) => {
-    try {
-      const { projectKey } = req.params;
-      const userPermissions = ['bmi_access', 'tdee_access']; // 簡化版權限
-
-      if (!validateProjectAccess(projectKey, userPermissions)) {
-        res.status(403).json({
-          success: false,
-          error: 'Project access denied or project not found',
-          code: 'PROJECT_ACCESS_DENIED'
-        });
-        return;
+// 獲取可用的專案列表
+router.get('/', (req, res) => {
+  try {
+    const projects = [
+      {
+        key: 'bmi',
+        name: 'BMI 計算器',
+        description: '身體質量指數計算',
+        path: '/projects/bmi'
+      },
+      {
+        key: 'tdee',
+        name: 'TDEE 計算器', 
+        description: '每日總能量消耗計算',
+        path: '/projects/tdee'
       }
+    ];
 
-      const project = PROJECT_CONFIGS[projectKey as keyof typeof PROJECT_CONFIGS];
-      
-      res.json({
-        success: true,
-        data: {
-          key: project.key,
-          name: project.name,
-          name_zh: project.name_zh,
-          description: project.description,
-          description_zh: project.description_zh,
-          icon: project.icon,
-          route: project.route,
-          features: project.features || []
-        },
-        message: 'Project information retrieved successfully'
-      });
+    res.json({
+      success: true,
+      data: projects,
+      message: 'Available projects retrieved successfully'
+    });
+  } catch (error) {
+    logger.error('Get projects error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get projects',
+      code: 'PROJECTS_ERROR'
+    });
+  }
+});
 
-    } catch (error) {
-      res.status(500).json({
-        success: false,
-        error: 'Failed to get project information',
-        code: 'GET_PROJECT_INFO_ERROR'
-      });
-    }
-  });
-
-  return router;
-};
+export default router;
