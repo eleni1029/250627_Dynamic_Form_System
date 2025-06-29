@@ -1,14 +1,8 @@
-// backend/src/routes/auth.routes.ts - 完整修復 TypeScript 錯誤
 import { Router, Request, Response } from 'express';
 import { AuthService } from '../services/auth.service';
-import { LoginRequest } from '../types/auth.types';
 import { logger } from '../utils/logger';
-import { authMiddleware } from '../middleware/auth.middleware';
-import { adminMiddleware } from '../middleware/admin.middleware';
 
 const router = Router();
-
-// 延遲初始化服務，避免在資料庫連接前實例化
 let authService: AuthService;
 
 function getAuthService(): AuthService {
@@ -18,30 +12,24 @@ function getAuthService(): AuthService {
   return authService;
 }
 
-// ===== 核心認證 API =====
-
 // 用戶登錄
-router.post('/login', async (req: Request, res: Response) => {
+router.post('/login', async (req: Request, res: Response): Promise<void> => {
   try {
     const { username, password } = req.body;
+    const ipAddress = req.ip;
+    const userAgent = req.get('User-Agent');
 
     if (!username || !password) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         error: 'Username and password are required',
         code: 'MISSING_CREDENTIALS'
       });
+      return;
     }
 
-    const ipAddress = req.ip || '127.0.0.1';
-    const userAgent = req.get('User-Agent') || 'Unknown';
-    
-    const loginCredentials: LoginRequest = { username, password };
-    const result = await getAuthService().login(
-      loginCredentials,
-      ipAddress, 
-      userAgent
-    );
+    const loginData = { username, password };
+    const result = await getAuthService().login(loginData, ipAddress, userAgent);
 
     if (result.success && result.user) {
       req.session.user = result.user;
@@ -50,17 +38,15 @@ router.post('/login', async (req: Request, res: Response) => {
       logger.info('User login successful', {
         userId: result.user.id,
         username: result.user.username,
-        ip: ipAddress,
-        userAgent
+        ip: ipAddress
       });
 
       res.json({
         success: true,
-        data: {
-          user: result.user,
-          message: 'Login successful'
-        }
+        message: result.message,
+        user: result.user
       });
+      return;
     } else {
       logger.warn('User login failed', {
         username,
@@ -71,59 +57,58 @@ router.post('/login', async (req: Request, res: Response) => {
       res.status(401).json({
         success: false,
         error: result.message || 'Invalid username or password',
-        code: 'LOGIN_FAILED'
+        code: 'INVALID_CREDENTIALS'
       });
+      return;
     }
   } catch (error) {
     logger.error('Login error:', error);
     res.status(500).json({
       success: false,
-      error: 'An error occurred during login',
-      code: 'LOGIN_ERROR'
+      error: 'Internal server error during login',
+      code: 'LOGIN_SERVER_ERROR'
     });
+    return;
   }
 });
 
-// 管理員登錄 - 修復類型錯誤
-router.post('/admin/login', async (req: Request, res: Response) => {
+// 管理員登錄
+router.post('/admin/login', async (req: Request, res: Response): Promise<void> => {
   try {
     const { username, password } = req.body;
+    const ipAddress = req.ip;
+    const userAgent = req.get('User-Agent');
 
     if (!username || !password) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         error: 'Username and password are required',
         code: 'MISSING_CREDENTIALS'
       });
+      return;
     }
 
-    const ipAddress = req.ip || '127.0.0.1';
-    const userAgent = req.get('User-Agent') || 'Unknown';
-    
-    // 簡化調用，確保參數順序正確
-    const service = getAuthService() as any;
-    const result = await service.adminLogin(
-      { username, password },
-      ipAddress, 
-      userAgent
-    );
+    const loginData = { username, password };
+    const result = await getAuthService().adminLogin(loginData, ipAddress, userAgent);
 
     if (result.success) {
       req.session.isAdmin = true;
-      req.session.adminUser = { 
-        username,
+      req.session.adminUser = {
+        username: username,
         loginTime: new Date()
       };
 
-      logger.info('Admin login successful', { ip: ipAddress, userAgent });
+      logger.info('Admin login successful', {
+        username,
+        ip: ipAddress
+      });
 
       res.json({
         success: true,
-        data: {
-          message: 'Admin login successful',
-          isAdmin: true
-        }
+        message: result.message,
+        isAdmin: true
       });
+      return;
     } else {
       logger.warn('Admin login failed', {
         username,
@@ -133,121 +118,91 @@ router.post('/admin/login', async (req: Request, res: Response) => {
 
       res.status(401).json({
         success: false,
-        error: result.message || 'Invalid admin credentials',
-        code: 'ADMIN_LOGIN_FAILED'
+        error: result.message,
+        code: 'INVALID_ADMIN_CREDENTIALS'
       });
+      return;
     }
   } catch (error) {
     logger.error('Admin login error:', error);
     res.status(500).json({
       success: false,
-      error: 'An error occurred during admin login',
-      code: 'ADMIN_LOGIN_ERROR'
+      error: 'Internal server error during admin login',
+      code: 'ADMIN_LOGIN_SERVER_ERROR'
     });
+    return;
   }
 });
 
 // 登出
-router.post('/logout', async (req: Request, res: Response) => {
+router.post('/logout', async (req: Request, res: Response): Promise<void> => {
   try {
-    const ipAddress = req.ip || '127.0.0.1';
-    const userAgent = req.get('User-Agent') || 'Unknown';
+    const ipAddress = req.ip;
+    const userAgent = req.get('User-Agent');
 
     if (req.session.user) {
-      // 用戶登出
       await getAuthService().logout(req.session.user.id, ipAddress, userAgent);
-      logger.info('User logout successful', {
+      logger.info('User logout', {
         userId: req.session.user.id,
         ip: ipAddress
       });
     } else if (req.session.isAdmin) {
-      // 管理員登出
       await getAuthService().adminLogout(ipAddress, userAgent);
-      logger.info('Admin logout successful', { ip: ipAddress });
+      logger.info('Admin logout', { ip: ipAddress });
     }
 
-    // 清除 session
     req.session.destroy((err) => {
       if (err) {
         logger.error('Session destroy error:', err);
-        return res.status(500).json({
+        res.status(500).json({
           success: false,
-          error: 'Logout failed',
+          error: 'Failed to logout',
           code: 'LOGOUT_ERROR'
         });
+        return;
       }
 
-      res.clearCookie('dynamic_form_session');
       res.json({
         success: true,
-        data: {
-          message: 'Logout successful'
-        }
+        message: 'Logged out successfully'
       });
+      return;
     });
   } catch (error) {
     logger.error('Logout error:', error);
     res.status(500).json({
       success: false,
-      error: 'An error occurred during logout',
-      code: 'LOGOUT_ERROR'
+      error: 'Internal server error during logout',
+      code: 'LOGOUT_SERVER_ERROR'
     });
+    return;
   }
 });
 
-// 認證狀態檢查
-router.get('/status', (req: Request, res: Response) => {
-  const authenticated = !!(req.session?.user || req.session?.isAdmin);
-  const isAdmin = !!req.session?.isAdmin;
-  const user = req.session?.user || null;
+// 獲取認證狀態
+router.get('/status', (req: Request, res: Response): void => {
+  try {
+    const authenticated = !!(req.session?.user || req.session?.isAdmin);
+    const isAdmin = !!req.session?.isAdmin;
+    const user = req.session?.user || null;
 
-  res.json({
-    success: true,
-    data: {
-      authenticated,
-      isAdmin,
-      user
-    }
-  });
-});
-
-// ===== 開發測試端點 =====
-
-// 基礎測試
-router.get('/test', (req: Request, res: Response) => {
-  res.json({
-    success: true,
-    message: 'Auth routes working',
-    timestamp: new Date().toISOString(),
-    session: {
-      hasSession: !!req.session,
-      isAuthenticated: !!(req.session?.user || req.session?.isAdmin),
-      isAdmin: !!req.session?.isAdmin,
-      user: req.session?.user || null,
-      adminUser: req.session?.adminUser || null
-    },
-    environment: process.env.NODE_ENV
-  });
-});
-
-// 測試認證中間件
-router.get('/test/auth', authMiddleware, (req: Request, res: Response) => {
-  res.json({
-    success: true,
-    message: 'Authentication middleware working',
-    user: req.user || null,
-    isAdmin: req.isAdmin || false
-  });
-});
-
-// 測試管理員中間件
-router.get('/test/admin', adminMiddleware, (req: Request, res: Response) => {
-  res.json({
-    success: true,
-    message: 'Admin middleware working',
-    adminUser: req.session?.adminUser || null,
-    isAdmin: req.isAdmin || false
-  });
+    res.json({
+      success: true,
+      data: {
+        isAuthenticated: authenticated,
+        isAdmin: isAdmin,
+        user: user,
+        adminUser: req.session?.adminUser || null
+      }
+    });
+  } catch (error) {
+    logger.error('Auth status error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get auth status',
+      code: 'AUTH_STATUS_ERROR'
+    });
+  }
 });
 
 export default router;

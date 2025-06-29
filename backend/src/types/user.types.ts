@@ -2,6 +2,7 @@ export interface UpdateUserRequest {
   name?: string;
   password?: string;
   avatar_url?: string;
+  is_active?: boolean;
 }
 
 export interface CreateUserRequest {
@@ -9,6 +10,7 @@ export interface CreateUserRequest {
   name: string;
   password: string;
   avatar_url?: string;
+  is_active?: boolean;
 }
 
 export interface UserWithPermissions {

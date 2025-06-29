@@ -46,15 +46,18 @@ export interface CreateUserRequest {
   name: string;
   password: string;
   avatar_url?: string;
+  is_active?: boolean;
 }
 
 export interface UpdateUserRequest {
   name?: string;
   password?: string;
   avatar_url?: string;
+  is_active?: boolean;
 }
 
 export interface UserWithPermissions extends SessionUser {
+  updated_at: Date;
   permissions: string[];
   projects: Array<{
     id: string;

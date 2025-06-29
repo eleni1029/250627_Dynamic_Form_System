@@ -1,68 +1,62 @@
-// backend/src/config/projects.config.ts
-import { BMI_PROJECT_CONFIG, registerBMIModule } from '../projects/bmi';
-import { TDEE_PROJECT_CONFIG, registerTDEEModule } from '../projects/tdee';
+// Dynamic Form System Projects Configuration
 
-// 所有專案模組配置
-export const PROJECT_CONFIGS = {
-  bmi: BMI_PROJECT_CONFIG,
-  tdee: TDEE_PROJECT_CONFIG
-} as const;
+export interface ProjectConfig {
+  key: string;
+  name: string;
+  description: string;
+  version: string;
+  path: string;
+  permissions: string[];
+}
 
-// 專案模組註冊函數
-export const registerAllProjectModules = (app: any): void => {
-  console.log('🚀 Registering project modules...');
-  
-  try {
-    // 註冊 BMI 模組
-    registerBMIModule(app);
-    
-    // 註冊 TDEE 模組
-    registerTDEEModule(app);
-    
-    console.log('✅ All project modules registered successfully');
-    console.log('📊 Available projects:', Object.keys(PROJECT_CONFIGS));
-    
-  } catch (error) {
-    console.error('❌ Error registering project modules:', error);
-    throw error;
-  }
+// BMI 專案配置
+export const BMI_PROJECT_CONFIG: ProjectConfig = {
+  key: 'bmi',
+  name: 'BMI Calculator',
+  description: 'Body Mass Index Calculator',
+  version: '1.0.0',
+  path: '/projects/bmi',
+  permissions: ['bmi:read', 'bmi:write']
 };
 
-// 獲取用戶可訪問的專案列表
-export const getUserAccessibleProjects = (userPermissions: string[]) => {
-  const accessibleProjects = [];
-  
-  for (const [key, config] of Object.entries(PROJECT_CONFIGS)) {
-    // 檢查用戶是否有訪問該專案的權限
-    const hasPermission = config.permissions.some(permission => 
-      userPermissions.includes(permission)
-    );
-    
-    if (hasPermission && config.isActive) {
-      accessibleProjects.push({
-        key: config.key,
-        name: config.name,
-        name_zh: config.name_zh,
-        description: config.description,
-        description_zh: config.description_zh,
-        icon: config.icon,
-        route: config.route
-      });
-    }
-  }
-  
-  return accessibleProjects;
+// TDEE 專案配置
+export const TDEE_PROJECT_CONFIG: ProjectConfig = {
+  key: 'tdee',
+  name: 'TDEE Calculator',
+  description: 'Total Daily Energy Expenditure Calculator',
+  version: '1.0.0',
+  path: '/projects/tdee',
+  permissions: ['tdee:read', 'tdee:write']
 };
 
-// 驗證專案是否存在且用戶有權限訪問
-export const validateProjectAccess = (projectKey: string, userPermissions: string[]): boolean => {
-  const project = PROJECT_CONFIGS[projectKey as keyof typeof PROJECT_CONFIGS];
-  
-  if (!project || !project.isActive) {
-    return false;
-  }
-  
-  return project.permissions.some(permission => 
-    userPermissions.includes(permission)
+// 所有專案配置
+export const PROJECT_CONFIGS: ProjectConfig[] = [
+  BMI_PROJECT_CONFIG,
+  TDEE_PROJECT_CONFIG
+];
+
+// 檢查用戶權限
+export function hasProjectPermission(
+  userPermissions: string[],
+  projectKey: string,
+  action: string = 'read'
+): boolean {
+  const config = PROJECT_CONFIGS.find(p => p.key === projectKey);
+  if (!config) return false;
+
+  const hasPermission = config.permissions.some((permission: string) =>
+    userPermissions.includes(permission) || 
+    userPermissions.includes(`${projectKey}:${action}`)
   );
-};
+
+  return hasPermission;
+}
+
+// 獲取用戶可訪問的專案
+export function getUserAccessibleProjects(userPermissions: string[]): ProjectConfig[] {
+  return PROJECT_CONFIGS.filter(project => 
+    project.permissions.some((permission: string) =>
+      userPermissions.includes(permission)
+    )
+  );
+}
