@@ -47,3 +47,28 @@ router.get('/', (req, res) => {
 });
 
 export default router;
+
+// TDEE 活動等級
+router.get('/tdee/activity-levels', (req, res) => {
+  try {
+    const activityLevels = [
+      { value: 'sedentary', label: '久坐不動', description: '很少運動，主要是坐著工作' },
+      { value: 'light', label: '輕度活動', description: '每週1-3次輕度運動' },
+      { value: 'moderate', label: '中度活動', description: '每週3-5次中度運動' },
+      { value: 'active', label: '積極活動', description: '每週6-7次運動' },
+      { value: 'very_active', label: '非常活躍', description: '每天運動，體力勞動工作' }
+    ];
+
+    res.json({
+      success: true,
+      data: activityLevels,
+      message: 'Activity levels retrieved successfully'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get activity levels',
+      code: 'ACTIVITY_LEVELS_ERROR'
+    });
+  }
+});
