@@ -1,3 +1,13 @@
+#!/bin/bash
+
+echo "🔧 修復 TDEE 下拉選項問題"
+
+# Part 1: 修復後端控制器
+echo "📝 Part 1: 修復後端 TDEEController"
+
+mkdir -p backend/src/projects/tdee/controllers
+
+cat > backend/src/projects/tdee/controllers/TDEEController.ts << 'CONTROLLER_EOF'
 import { Response } from 'express';
 import { AuthenticatedRequest } from '../../../types/auth.types';
 import { TDEECalculationRequest, ACTIVITY_LEVELS } from '../types/tdee.types';
@@ -71,7 +81,7 @@ export class TDEEController {
         activity_level
       };
 
-      logger.info(`TDEE calculated for user ${userId}`, { bmr: result.bmr, tdee: result.tdee });
+      logger.info(\`TDEE calculated for user \${userId}\`, { bmr: result.bmr, tdee: result.tdee });
       
       res.status(201).json({
         success: true,
@@ -193,3 +203,62 @@ export class TDEEController {
     }
   };
 }
+CONTROLLER_EOF
+
+echo "✅ TDEEController 已修復"
+
+# Part 2: 修復驗證中間件
+echo "📝 Part 2: 修復驗證中間件"
+
+mkdir -p backend/src/projects/tdee/middleware
+
+cat > backend/src/projects/tdee/middleware/tdee.validation.ts << 'VALIDATION_EOF'
+import { Request, Response, NextFunction } from 'express';
+import { body, validationResult } from 'express-validator';
+import { ACTIVITY_LEVELS } from '../types/tdee.types';
+
+export const validateTDEECalculation = [
+  body('height')
+    .isNumeric()
+    .withMessage('身高必須是數字')
+    .isFloat({ min: 50, max: 250 })
+    .withMessage('身高範圍應在 50-250cm 之間'),
+    
+  body('weight')
+    .isNumeric()
+    .withMessage('體重必須是數字')
+    .isFloat({ min: 20, max: 300 })
+    .withMessage('體重範圍應在 20-300kg 之間'),
+    
+  body('age')
+    .isInt({ min: 1, max: 120 })
+    .withMessage('年齡範圍應在 1-120 歲之間'),
+    
+  body('gender')
+    .isIn(['male', 'female'])
+    .withMessage('性別必須是 male 或 female'),
+    
+  body('activity_level')
+    .isIn(Object.keys(ACTIVITY_LEVELS))
+    .withMessage(`活動等級必須是: ${Object.keys(ACTIVITY_LEVELS).join(', ')}`),
+
+  (req: Request, res: Response, next: NextFunction) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        details: errors.array(),
+        code: 'VALIDATION_ERROR'
+      });
+    }
+    next();
+  }
+];
+VALIDATION_EOF
+
+echo "✅ 驗證中間件已修復"
+
+echo ""
+echo "🎯 修復完成！請重啟後端服務："
+echo "   cd backend && npm run dev"

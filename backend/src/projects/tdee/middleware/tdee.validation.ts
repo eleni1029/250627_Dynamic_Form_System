@@ -1,63 +1,42 @@
 import { Request, Response, NextFunction } from 'express';
+import { body, validationResult } from 'express-validator';
 import { ACTIVITY_LEVELS } from '../types/tdee.types';
-import { logger } from '../../../utils/logger';
 
-export const validateTDEECalculation = (req: Request, res: Response, next: NextFunction): void => {
-  try {
-    const { height, weight, age, gender, activity_level } = req.body;
+export const validateTDEECalculation = [
+  body('height')
+    .isNumeric()
+    .withMessage('身高必須是數字')
+    .isFloat({ min: 50, max: 250 })
+    .withMessage('身高範圍應在 50-250cm 之間'),
+    
+  body('weight')
+    .isNumeric()
+    .withMessage('體重必須是數字')
+    .isFloat({ min: 20, max: 300 })
+    .withMessage('體重範圍應在 20-300kg 之間'),
+    
+  body('age')
+    .isInt({ min: 1, max: 120 })
+    .withMessage('年齡範圍應在 1-120 歲之間'),
+    
+  body('gender')
+    .isIn(['male', 'female'])
+    .withMessage('性別必須是 male 或 female'),
+    
+  body('activity_level')
+    .isIn(Object.keys(ACTIVITY_LEVELS))
+    .withMessage(`活動等級必須是: ${Object.keys(ACTIVITY_LEVELS).join(', ')}`),
 
-    if (!height || !weight || !age || !gender || !activity_level) {
-      res.status(400).json({
+  (req: Request, res: Response, next: NextFunction) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
         success: false,
-        error: 'All fields are required for TDEE calculation',
-        code: 'MISSING_REQUIRED_FIELDS'
+        error: 'Validation failed',
+        details: errors.array(),
+        code: 'VALIDATION_ERROR'
       });
-      return;
     }
-
-    const numHeight = parseFloat(height);
-    const numWeight = parseFloat(weight);
-    const numAge = parseInt(age);
-
-    if (isNaN(numHeight) || isNaN(numWeight) || isNaN(numAge)) {
-      res.status(400).json({
-        success: false,
-        error: 'Height, weight, and age must be valid numbers',
-        code: 'INVALID_NUMBER_FORMAT'
-      });
-      return;
-    }
-
-    if (!['male', 'female'].includes(gender)) {
-      res.status(400).json({
-        success: false,
-        error: 'Gender must be either male or female',
-        code: 'INVALID_GENDER'
-      });
-      return;
-    }
-
-    if (!ACTIVITY_LEVELS[activity_level as keyof typeof ACTIVITY_LEVELS]) {
-      res.status(400).json({
-        success: false,
-        error: 'Invalid activity level',
-        code: 'INVALID_ACTIVITY_LEVEL'
-      });
-      return;
-    }
-
-    req.body.height = numHeight;
-    req.body.weight = numWeight;
-    req.body.age = numAge;
-
     next();
-
-  } catch (error) {
-    logger.error('TDEE validation error:', error);
-    res.status(500).json({
-      success: false,
-      error: 'TDEE validation processing error',
-      code: 'TDEE_VALIDATION_ERROR'
-    });
   }
-};
+];
