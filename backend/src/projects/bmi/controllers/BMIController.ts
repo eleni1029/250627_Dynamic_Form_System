@@ -1,9 +1,16 @@
 import { Response } from 'express';
 import { AuthenticatedRequest } from '../../../types/auth.types';
-import { BMICalculationRequest } from '../models/BMIRecord';
+import { BMIService } from '../services/BMIService';
+import { BMICalculationRequest } from '../types/bmi.types';
 import { logger } from '../../../utils/logger';
 
 export class BMIController {
+  private bmiService: BMIService;
+
+  constructor() {
+    this.bmiService = new BMIService();
+  }
+
   calculate = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const userId = req.user?.id;
@@ -17,32 +24,43 @@ export class BMIController {
         return;
       }
 
-      const { height, weight, age, gender } = req.body as BMICalculationRequest;
+      const request = req.body as BMICalculationRequest;
       
+      // 驗證數據
+      const validation = await this.bmiService.validateBMIData(request);
+      if (!validation.valid) {
+        res.status(400).json({
+          success: false,
+          error: 'Invalid BMI data',
+          code: 'BMI_DATA_INVALID',
+          details: validation.errors
+        });
+        return;
+      }
+
       // 計算 BMI
-      const heightInM = height / 100;
-      const bmi = weight / (heightInM * heightInM);
+      const result = await this.bmiService.calculateBMI(request);
       
-      let category = 'Normal weight';
-      if (bmi < 18.5) category = 'Underweight';
-      else if (bmi >= 25 && bmi < 30) category = 'Overweight';
-      else if (bmi >= 30) category = 'Obese';
+      // 保存記錄
+      const record = await this.bmiService.saveBMIRecord(userId, request, result);
 
-      const result = {
-        bmi: Math.round(bmi * 100) / 100,
-        category,
-        height,
-        weight,
-        age,
-        gender
-      };
-
-      logger.info(`BMI calculated for user ${userId}`, { bmi: result.bmi, category });
+      logger.info(`BMI calculated for user ${userId}`, { 
+        bmi: result.bmi, 
+        category: result.category,
+        recordId: record.id
+      });
       
       res.status(201).json({
         success: true,
-        data: result,
-        message: 'BMI calculated successfully'
+        data: {
+          calculation: result,
+          input: request,
+          record: {
+            id: record.id,
+            created_at: record.created_at
+          }
+        },
+        message: 'BMI calculated and saved successfully'
       });
 
     } catch (error) {
@@ -57,9 +75,26 @@ export class BMIController {
 
   getHistory = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: 'User authentication required',
+          code: 'AUTH_REQUIRED'
+        });
+        return;
+      }
+
+      const limit = parseInt(req.query.limit as string) || 50;
+      const history = await this.bmiService.getUserBMIHistory(userId, limit);
+
       res.json({
         success: true,
-        data: [],
+        data: {
+          records: history,
+          total: history.length,
+          limit: limit
+        },
         message: 'BMI history retrieved successfully'
       });
     } catch (error) {
@@ -74,10 +109,22 @@ export class BMIController {
 
   getLatest = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: 'User authentication required',
+          code: 'AUTH_REQUIRED'
+        });
+        return;
+      }
+
+      const latest = await this.bmiService.getLatestBMI(userId);
+
       res.json({
         success: true,
-        data: null,
-        message: 'Latest BMI retrieved successfully'
+        data: latest,
+        message: latest ? 'Latest BMI retrieved successfully' : 'No BMI records found'
       });
     } catch (error) {
       logger.error('BMI get latest error:', error);
@@ -91,10 +138,22 @@ export class BMIController {
 
   getUserStats = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: 'User authentication required',
+          code: 'AUTH_REQUIRED'
+        });
+        return;
+      }
+
+      const stats = await this.bmiService.getUserStats(userId);
+
       res.json({
         success: true,
-        data: { totalRecords: 0 },
-        message: 'BMI stats retrieved successfully'
+        data: stats,
+        message: 'BMI statistics retrieved successfully'
       });
     } catch (error) {
       logger.error('BMI get stats error:', error);
@@ -108,10 +167,34 @@ export class BMIController {
 
   deleteRecord = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      res.json({
-        success: true,
-        message: 'BMI record deleted successfully'
-      });
+      const userId = req.user?.id;
+      const recordId = req.params.id;
+
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: 'User authentication required',
+          code: 'AUTH_REQUIRED'
+        });
+        return;
+      }
+
+      const deleted = await this.bmiService.deleteBMIRecord(recordId, userId);
+      
+      if (deleted) {
+        logger.info(`BMI record deleted: ${recordId} by user ${userId}`);
+        res.json({
+          success: true,
+          data: { deletedRecordId: recordId },
+          message: 'BMI record deleted successfully'
+        });
+      } else {
+        res.status(404).json({
+          success: false,
+          error: 'BMI record not found or access denied',
+          code: 'BMI_RECORD_NOT_FOUND'
+        });
+      }
     } catch (error) {
       logger.error('BMI delete record error:', error);
       res.status(500).json({
@@ -124,26 +207,50 @@ export class BMIController {
 
   clearHistory = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: 'User authentication required',
+          code: 'AUTH_REQUIRED'
+        });
+        return;
+      }
+
+      const deletedCount = await this.bmiService.clearUserHistory(userId);
+
+      logger.info(`BMI history cleared: ${deletedCount} records for user ${userId}`);
       res.json({
         success: true,
-        message: 'BMI history cleared successfully'
+        data: { 
+          deletedCount,
+          userId: userId
+        },
+        message: `Successfully cleared ${deletedCount} BMI records`
       });
     } catch (error) {
       logger.error('BMI clear history error:', error);
       res.status(500).json({
         success: false,
         error: 'Internal server error while clearing BMI history',
-        code: 'BMI_CLEAR_HISTORY_SERVER_ERROR'
+        code: 'BMI_CLEAR_SERVER_ERROR'
       });
     }
   };
 
   validateData = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
+      const request = req.body as BMICalculationRequest;
+      const validation = await this.bmiService.validateBMIData(request);
+
       res.json({
         success: true,
-        data: { isValid: true },
-        message: 'Data is valid'
+        data: {
+          valid: validation.valid,
+          errors: validation.errors,
+          input: request
+        },
+        message: validation.valid ? 'BMI data is valid' : 'BMI data validation failed'
       });
     } catch (error) {
       logger.error('BMI validate data error:', error);
@@ -151,6 +258,56 @@ export class BMIController {
         success: false,
         error: 'Internal server error while validating BMI data',
         code: 'BMI_VALIDATE_SERVER_ERROR'
+      });
+    }
+  };
+
+  // 額外的統計端點
+  getTrend = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        res.status(401).json({
+          success: false,
+          error: 'User authentication required',
+          code: 'AUTH_REQUIRED'
+        });
+        return;
+      }
+
+      const days = parseInt(req.query.days as string) || 30;
+      const records = await this.bmiService.getUserBMIHistory(userId, Math.min(days, 100));
+      
+      // 簡單的趨勢分析
+      let trend = 'stable';
+      if (records.length >= 2) {
+        const latest = records[0].bmi;
+        const previous = records[1].bmi;
+        const difference = latest - previous;
+        
+        if (difference > 0.5) trend = 'increasing';
+        else if (difference < -0.5) trend = 'decreasing';
+      }
+
+      res.json({
+        success: true,
+        data: {
+          trend,
+          records: records.slice(0, 10), // 只返回最近10筆用於圖表
+          summary: {
+            totalRecords: records.length,
+            timeframe: `${days} days`,
+            analysisDate: new Date()
+          }
+        },
+        message: 'BMI trend analysis completed'
+      });
+    } catch (error) {
+      logger.error('BMI trend analysis error:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error while analyzing BMI trend',
+        code: 'BMI_TREND_SERVER_ERROR'
       });
     }
   };

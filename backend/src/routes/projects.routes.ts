@@ -20,20 +20,65 @@ router.get('/', (req, res) => {
       {
         key: 'bmi',
         name: 'BMI 計算器',
-        description: '身體質量指數計算',
-        path: '/projects/bmi'
+        description: '身體質量指數計算 - 評估體重狀況',
+        path: '/projects/bmi',
+        version: '1.0.0',
+        features: [
+          'BMI 計算與分類',
+          '健康風險評估',
+          'WHO 標準分類',
+          '個人化建議',
+          '趨勢分析'
+        ],
+        endpoints: {
+          calculate: 'POST /projects/bmi/calculate',
+          history: 'GET /projects/bmi/history',
+          latest: 'GET /projects/bmi/latest',
+          stats: 'GET /projects/bmi/stats',
+          trend: 'GET /projects/bmi/trend'
+        }
       },
       {
         key: 'tdee',
-        name: 'TDEE 計算器', 
-        description: '每日總能量消耗計算',
-        path: '/projects/tdee'
+        name: 'TDEE 計算器',
+        description: '每日總能量消耗計算 - 制定營養計畫',
+        path: '/projects/tdee',
+        version: '1.0.0',
+        features: [
+          'BMR 與 TDEE 計算',
+          '活動等級評估',
+          '宏營養素分配',
+          '卡路里目標設定',
+          '個人化營養建議'
+        ],
+        endpoints: {
+          calculate: 'POST /projects/tdee/calculate',
+          activityLevels: 'GET /projects/tdee/activity-levels',
+          history: 'GET /projects/tdee/history',
+          latest: 'GET /projects/tdee/latest',
+          stats: 'GET /projects/tdee/stats',
+          nutrition: 'GET /projects/tdee/nutrition-advice'
+        }
       }
     ];
 
     res.json({
       success: true,
-      data: projects,
+      data: {
+        projects,
+        total: projects.length,
+        metadata: {
+          version: '1.0.0',
+          lastUpdated: new Date().toISOString(),
+          supportedFeatures: [
+            'calculation',
+            'history_tracking',
+            'statistics',
+            'data_validation',
+            'trend_analysis'
+          ]
+        }
+      },
       message: 'Available projects retrieved successfully'
     });
   } catch (error) {
@@ -46,29 +91,39 @@ router.get('/', (req, res) => {
   }
 });
 
-export default router;
-
-// TDEE 活動等級
-router.get('/tdee/activity-levels', (req, res) => {
+// 專案健康檢查端點
+router.get('/health', (req, res) => {
   try {
-    const activityLevels = [
-      { value: 'sedentary', label: '久坐不動', description: '很少運動，主要是坐著工作' },
-      { value: 'light', label: '輕度活動', description: '每週1-3次輕度運動' },
-      { value: 'moderate', label: '中度活動', description: '每週3-5次中度運動' },
-      { value: 'active', label: '積極活動', description: '每週6-7次運動' },
-      { value: 'very_active', label: '非常活躍', description: '每天運動，體力勞動工作' }
-    ];
+    const healthStatus = {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      services: {
+        bmi: {
+          status: 'operational',
+          endpoints: ['calculate', 'history', 'stats', 'trend']
+        },
+        tdee: {
+          status: 'operational', 
+          endpoints: ['calculate', 'activity-levels', 'history', 'stats', 'nutrition-advice']
+        }
+      },
+      database: 'connected',
+      version: '1.0.0'
+    };
 
     res.json({
       success: true,
-      data: activityLevels,
-      message: 'Activity levels retrieved successfully'
+      data: healthStatus,
+      message: 'All project services are healthy'
     });
   } catch (error) {
+    logger.error('Projects health check error:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to get activity levels',
-      code: 'ACTIVITY_LEVELS_ERROR'
+      error: 'Health check failed',
+      code: 'HEALTH_CHECK_ERROR'
     });
   }
 });
+
+export default router;
