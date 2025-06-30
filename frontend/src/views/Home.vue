@@ -11,11 +11,19 @@
        </el-empty>
      </div>
      
+     <div v-else-if="isLoadingProjects" class="loading-projects">
+       <el-skeleton :rows="3" animated />
+       <p class="loading-text">正在載入專案列表...</p>
+     </div>
+     
      <div v-else-if="!hasProjects" class="no-projects">
        <el-empty description="沒有可用的專案">
          <p class="no-projects-text">
            您目前沒有任何專案的訪問權限，請聯繫系統管理員。
          </p>
+         <el-button @click="refreshProjects" :loading="isLoadingProjects">
+           重新載入
+         </el-button>
        </el-empty>
      </div>
      
@@ -27,7 +35,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../shared/stores/auth';
 import { useProjectStore } from '../shared/stores/project';
@@ -41,6 +49,7 @@ const projectStore = useProjectStore();
 
 const isAuthenticated = computed(() => authStore.isAuthenticated);
 const hasProjects = computed(() => projectStore.hasProjects);
+const isLoadingProjects = computed(() => projectStore.isLoading);
 const currentProjectKey = computed(() => projectStore.currentProjectKey);
 
 const currentProjectComponent = computed(() => {
@@ -58,10 +67,34 @@ const goToLogin = () => {
  router.push('/login');
 };
 
+const refreshProjects = async () => {
+ await projectStore.fetchUserProjects(true);
+};
+
+// 🔧 修復：監聽認證狀態變化
+watch(isAuthenticated, async (newValue) => {
+ if (newValue && !hasProjects.value && !isLoadingProjects.value) {
+   console.log('認證狀態變化，重新獲取專案列表');
+   await projectStore.fetchUserProjects(true);
+ }
+}, { immediate: false });
+
 onMounted(async () => {
- await authStore.checkAuth();
- if (isAuthenticated.value) {
-   await projectStore.fetchUserProjects();
+ console.log('Home 頁面載入');
+ 
+ // 🔧 修復：如果沒有認證，先檢查認證狀態
+ if (!isAuthenticated.value) {
+   console.log('檢查認證狀態...');
+   const authSuccess = await authStore.checkAuth();
+   
+   if (authSuccess && !hasProjects.value) {
+     console.log('認證成功，獲取專案列表...');
+     await projectStore.fetchUserProjects(true);
+   }
+ } else if (!hasProjects.value && !isLoadingProjects.value) {
+   // 🔧 修復：已認證但沒有專案列表時才獲取
+   console.log('已認證但無專案列表，獲取專案列表...');
+   await projectStore.fetchUserProjects(true);
  }
 });
 </script>
@@ -80,15 +113,23 @@ onMounted(async () => {
 }
 
 .login-prompt,
-.no-projects {
+.no-projects,
+.loading-projects {
  display: flex;
+ flex-direction: column;
  justify-content: center;
  align-items: center;
  min-height: 400px;
 }
 
+.loading-text {
+ margin-top: 20px;
+ color: #909399;
+ font-size: 14px;
+}
+
 .no-projects-text {
- margin-top: 15px;
+ margin: 15px 0;
  color: #909399;
  font-size: 14px;
  text-align: center;

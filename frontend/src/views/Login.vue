@@ -86,14 +86,21 @@ const handleLogin = async () => {
    const valid = await formRef.value.validate();
    if (!valid) return;
    
+   console.log('開始登錄流程...');
    const success = await authStore.login(formData);
+   
    if (success) {
      ElMessage.success('登錄成功');
-     router.push('/');
+     
+     // 🔧 修復：給一點時間讓專案列表同步完成
+     setTimeout(() => {
+       router.push('/');
+     }, 100);
    } else {
      ElMessage.error('登錄失敗，請檢查用戶名和密碼');
    }
  } catch (error) {
+   console.error('登錄錯誤:', error);
    ElMessage.error('登錄過程中發生錯誤');
  }
 };
