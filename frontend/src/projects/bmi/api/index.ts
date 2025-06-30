@@ -18,10 +18,7 @@ export const bmiApi = {
   },
 
   // 獲取歷史記錄
-  async getHistory(params?: PaginationParams & { 
-    startDate?: string; 
-    endDate?: string; 
-  }): Promise<ApiResponse<{
+  async getHistory(params?: PaginationParams): Promise<ApiResponse<{
     records: BMIRecord[];
     total: number;
     limit: number;
