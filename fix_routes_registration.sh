@@ -1,3 +1,12 @@
+#!/bin/bash
+
+echo "🔧 修復路由註冊問題"
+echo "=================="
+
+# ===== 修復 app.ts 的路由註冊 =====
+echo "📝 修復 app.ts..."
+
+cat > backend/src/app.ts << 'EOF'
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -179,3 +188,16 @@ process.on('uncaughtException', (error) => {
 startServer();
 
 export default app;
+EOF
+
+echo ""
+echo "✅ 修復完成！主要改動："
+echo "1. 改善了路由載入的日誌記錄"
+echo "2. 添加了調試路由 /api/debug/routes"
+echo "3. 改善了 404 錯誤記錄"
+echo ""
+echo "🚀 重新啟動後端："
+echo "cd backend && npm run dev"
+echo ""
+echo "🔍 啟動後可以檢查："
+echo "curl http://localhost:3000/api/debug/routes"
