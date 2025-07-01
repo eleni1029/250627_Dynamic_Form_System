@@ -42,6 +42,8 @@ export interface TDEECalculationResult {
   recommendations?: any;
   calorieGoals?: any;
   nutritionAdvice?: string[];
+  bmrFormula?: string;
+  metabolicAge?: number;
 }
 
 export class TDEEModel {
@@ -151,7 +153,7 @@ export class TDEEModel {
     try {
       const query = `DELETE FROM tdee_records WHERE id = $1 AND user_id = $2 RETURNING id`;
       const result = await this.pool.query(query, [recordId, userId]);
-      return result.rowCount > 0;
+      return (result.rowCount || 0) > 0;
     } catch (error) {
       logger.error('Error deleting TDEE record:', error);
       throw new Error('Failed to delete TDEE record');
@@ -162,7 +164,7 @@ export class TDEEModel {
     try {
       const query = `DELETE FROM tdee_records WHERE user_id = $1 RETURNING id`;
       const result = await this.pool.query(query, [userId]);
-      return result.rowCount;
+      return result.rowCount || 0;
     } catch (error) {
       logger.error('Error clearing TDEE history:', error);
       throw new Error('Failed to clear TDEE history');
@@ -255,48 +257,6 @@ export class TDEEModel {
     } catch (error) {
       logger.error('Error getting activity level distribution:', error);
       throw new Error('Failed to get activity level distribution');
-    }
-  }
-
-  async getBMRTrend(userId: string, days: number = 30): Promise<Array<{ date: string; bmr: number }>> {
-    try {
-      const query = `
-        SELECT DATE(created_at) as date, AVG(bmr) as avg_bmr
-        FROM tdee_records 
-        WHERE user_id = $1 AND created_at >= NOW() - INTERVAL '${days} days'
-        GROUP BY DATE(created_at)
-        ORDER BY date DESC
-      `;
-      const result = await this.pool.query(query, [userId]);
-      
-      return result.rows.map(row => ({
-        date: row.date,
-        bmr: Math.round(row.avg_bmr)
-      }));
-    } catch (error) {
-      logger.error('Error getting BMR trend:', error);
-      throw new Error('Failed to get BMR trend');
-    }
-  }
-
-  async getTDEETrend(userId: string, days: number = 30): Promise<Array<{ date: string; tdee: number }>> {
-    try {
-      const query = `
-        SELECT DATE(created_at) as date, AVG(tdee) as avg_tdee
-        FROM tdee_records 
-        WHERE user_id = $1 AND created_at >= NOW() - INTERVAL '${days} days'
-        GROUP BY DATE(created_at)
-        ORDER BY date DESC
-      `;
-      const result = await this.pool.query(query, [userId]);
-      
-      return result.rows.map(row => ({
-        date: row.date,
-        tdee: Math.round(row.avg_tdee)
-      }));
-    } catch (error) {
-      logger.error('Error getting TDEE trend:', error);
-      throw new Error('Failed to get TDEE trend');
     }
   }
 }

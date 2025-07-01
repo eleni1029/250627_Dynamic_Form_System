@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { validateBMIInput } from '../types/bmi-utils.types';
+import { validateBMIInput } from '../types/bmi.types';
 import { logger } from '../../../utils/logger';
 
 export const validateBMICalculation = (req: Request, res: Response, next: NextFunction): void => {
@@ -64,7 +64,7 @@ export const validateBMICalculation = (req: Request, res: Response, next: NextFu
 
     // 添加警告到響應中（如果有）
     if (validation.warnings && validation.warnings.length > 0) {
-      req.body._warnings = validation.warnings;
+      (req.body as any)._warnings = validation.warnings;
     }
 
     next();

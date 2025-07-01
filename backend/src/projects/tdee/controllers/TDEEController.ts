@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { AuthenticatedRequest } from '../../../types/auth.types';
 import { TDEEService } from '../services/TDEEService';
-import { TDEECalculationRequest } from '../types/tdee.types';
+import { TDEECalculationRequest } from '../types';
 import { logger } from '../../../utils/logger';
 
 export class TDEEController {
@@ -199,6 +199,15 @@ export class TDEEController {
         return;
       }
 
+      if (!recordId) {
+        res.status(400).json({
+          success: false,
+          error: 'Record ID is required',
+          code: 'RECORD_ID_REQUIRED'
+        });
+        return;
+      }
+
       const deleted = await this.tdeeService.deleteTDEERecord(recordId, userId);
       
       if (deleted) {
@@ -282,7 +291,6 @@ export class TDEEController {
     }
   };
 
-  // 額外的營養建議端點
   getNutritionAdvice = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const userId = req.user?.id;

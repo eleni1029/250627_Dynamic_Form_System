@@ -1,5 +1,5 @@
 import { TDEEModel, TDEECalculationRequest, TDEECalculationResult, TDEERecord } from '../models/TDEERecord';
-import { ACTIVITY_LEVELS } from '../types/tdee.types';
+import { ACTIVITY_LEVELS, ActivityLevel, Gender, calculateBMR, calculateTDEE, validateTDEEInput } from '../types/tdee.types';
 import { logger } from '../../../utils/logger';
 
 export class TDEEService {
@@ -13,31 +13,32 @@ export class TDEEService {
     try {
       const { height, weight, age, gender, activity_level } = request;
       
+      // 確保 activity_level 是有效的 ActivityLevel 類型
+      const activityLevel = activity_level as ActivityLevel;
+      
       // 計算 BMR 使用 Mifflin-St Jeor Equation
-      let bmr: number;
-      if (gender === 'male') {
-        bmr = 88.362 + (13.397 * weight) + (4.799 * height) - (5.677 * age);
-      } else {
-        bmr = 447.593 + (9.247 * weight) + (3.098 * height) - (4.330 * age);
-      }
-
+      const bmr = calculateBMR(height, weight, age, gender);
+      
       // 計算 TDEE
-      const activityInfo = ACTIVITY_LEVELS[activity_level];
-      const tdee = bmr * activityInfo.multiplier;
+      const activityInfo = ACTIVITY_LEVELS[activityLevel];
+      const tdee = calculateTDEE(bmr, activityLevel);
 
       return {
         bmr: Math.round(bmr),
         tdee: Math.round(tdee),
         activityInfo: {
-          level: activity_level,
+          level: activityLevel,
           multiplier: activityInfo.multiplier,
           description: activityInfo.description,
-          name: activityInfo.name
+          name: activityInfo.name,
+          chineseName: activityInfo.chineseName,
+          intensity: activityInfo.intensity
         },
         macronutrients: this.calculateMacros(tdee),
-        recommendations: this.getRecommendations(bmr, tdee, activity_level),
+        recommendations: this.getRecommendations(bmr, tdee, activityLevel, gender),
         calorieGoals: this.calculateCalorieGoals(tdee),
-        nutritionAdvice: this.getNutritionAdvice(age, gender, activity_level)
+        nutritionAdvice: this.getNutritionAdvice(age, gender, activityLevel),
+        bmrFormula: 'mifflin_st_jeor'
       };
     } catch (error) {
       logger.error('TDEE calculation service error:', error);
@@ -82,7 +83,7 @@ export class TDEEService {
     };
   }
 
-  private getRecommendations(bmr: number, tdee: number, activityLevel: string) {
+  private getRecommendations(bmr: number, tdee: number, activityLevel: ActivityLevel, gender: Gender) {
     const recommendations = {
       general: [
         '維持規律的飲食時間',
@@ -97,7 +98,7 @@ export class TDEEService {
         '均衡攝取各類營養素',
         '適量攝取膳食纖維'
       ],
-      warnings: []
+      warnings: [] as string[]
     };
 
     // 添加特殊警告
@@ -109,8 +110,8 @@ export class TDEEService {
     return recommendations;
   }
 
-  private getActivityAdvice(activityLevel: string): string[] {
-    const advice: Record<string, string[]> = {
+  private getActivityAdvice(activityLevel: ActivityLevel): string[] {
+    const advice: Record<ActivityLevel, string[]> = {
       sedentary: [
         '建議增加日常活動量',
         '每天至少步行30分鐘',
@@ -146,7 +147,7 @@ export class TDEEService {
     return advice[activityLevel] || ['請諮詢專業人士'];
   }
 
-  private getNutritionAdvice(age: number, gender: string, activityLevel: string): string[] {
+  private getNutritionAdvice(age: number, gender: Gender, activityLevel: ActivityLevel): string[] {
     const advice: string[] = [];
 
     if (age < 18) {
@@ -269,11 +270,13 @@ export class TDEEService {
       const recentRecords = await this.tdeeModel.findByUserId(userId, 5);
       if (recentRecords.length < 2) return 'insufficient_data';
       
-      const latest = recentRecords[0].bmr;
-      const previous = recentRecords[1].bmr;
+      const latest = recentRecords[0]?.bmr;
+      const previous = recentRecords[1]?.bmr;
       
-      if (latest > previous + 50) return 'increasing';
-      if (latest < previous - 50) return 'decreasing';
+      if (latest && previous) {
+        if (latest > previous + 50) return 'increasing';
+        if (latest < previous - 50) return 'decreasing';
+      }
       return 'stable';
     } catch (error) {
       return 'unknown';
@@ -281,31 +284,11 @@ export class TDEEService {
   }
 
   async validateTDEEData(request: TDEECalculationRequest): Promise<{ valid: boolean; errors: string[] }> {
-    const errors: string[] = [];
-
-    if (!request.height || request.height < 50 || request.height > 300) {
-      errors.push('身高必須在 50-300cm 之間');
-    }
-
-    if (!request.weight || request.weight < 10 || request.weight > 500) {
-      errors.push('體重必須在 10-500kg 之間');
-    }
-
-    if (!request.age || request.age < 1 || request.age > 150) {
-      errors.push('年齡必須在 1-150 歲之間');
-    }
-
-    if (!request.gender || !['male', 'female'].includes(request.gender)) {
-      errors.push('性別必須是 male 或 female');
-    }
-
-    if (!request.activity_level || !ACTIVITY_LEVELS[request.activity_level]) {
-      errors.push('必須選擇有效的活動等級');
-    }
-
-    return {
-      valid: errors.length === 0,
-      errors
+    // 創建一個符合驗證函數期望的請求對象
+    const validationRequest = {
+      ...request,
+      activity_level: request.activity_level as ActivityLevel
     };
+    return validateTDEEInput(validationRequest);
   }
 }

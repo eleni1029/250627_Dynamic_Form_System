@@ -1,149 +1,286 @@
-import { query } from '../database/connection';
+import { Pool } from 'pg';
+import bcrypt from 'bcryptjs';
+import { getPool } from '../config/database';
 import { logger } from '../utils/logger';
-import { UpdateUserRequest, UserWithPermissions } from '../types/user.types';
+
+export interface User {
+  id: string;
+  username: string;
+  name: string;
+  avatar_url?: string;
+  is_active: boolean;
+  created_at: Date;
+  last_login_at?: Date;
+}
+
+export interface CreateUserRequest {
+  username: string;
+  name: string;
+  password: string;
+  avatar_url?: string;
+}
+
+export interface UpdateUserRequest {
+  name?: string;
+  avatar_url?: string;
+  is_active?: boolean;
+}
+
+export interface UserWithProjects extends User {
+  projects: Array<{
+    key: string;
+    name: string;
+  }>;
+}
 
 export class UserService {
-  async getUserWithPermissions(userId: string): Promise<UserWithPermissions | null> {
+  private pool: Pool;
+
+  constructor() {
+    this.pool = getPool();
+  }
+
+  async createUser(userData: CreateUserRequest): Promise<User> {
     try {
-      const result = await query(
-        'SELECT id, username, name, avatar_url, is_active, created_at, updated_at FROM users WHERE id = $1',
-        [userId]
-      );
+      const hashedPassword = await bcrypt.hash(userData.password, 12);
+      
+      const query = `
+        INSERT INTO users (username, name, password_hash, avatar_url)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, username, name, avatar_url, is_active, created_at, last_login_at
+      `;
+      
+      const values = [
+        userData.username,
+        userData.name,
+        hashedPassword,
+        userData.avatar_url || null
+      ];
+
+      const result = await this.pool.query(query, values);
+      
+      logger.info(`User created: ${userData.username}`);
+      return result.rows[0];
+    } catch (error) {
+      logger.error('Error creating user:', error);
+      throw new Error('Failed to create user');
+    }
+  }
+
+  async getUserById(id: string): Promise<User | null> {
+    try {
+      const query = `
+        SELECT id, username, name, avatar_url, is_active, created_at, last_login_at
+        FROM users 
+        WHERE id = $1
+      `;
+      
+      const result = await this.pool.query(query, [id]);
+      return result.rows.length > 0 ? result.rows[0] : null;
+    } catch (error) {
+      logger.error('Error getting user by ID:', error);
+      throw new Error('Failed to get user');
+    }
+  }
+
+  async getUserByUsername(username: string): Promise<User | null> {
+    try {
+      const query = `
+        SELECT id, username, name, avatar_url, is_active, created_at, last_login_at
+        FROM users 
+        WHERE username = $1
+      `;
+      
+      const result = await this.pool.query(query, [username]);
+      return result.rows.length > 0 ? result.rows[0] : null;
+    } catch (error) {
+      logger.error('Error getting user by username:', error);
+      throw new Error('Failed to get user');
+    }
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    try {
+      const query = `
+        SELECT id, username, name, avatar_url, is_active, created_at, last_login_at
+        FROM users
+        ORDER BY created_at DESC
+      `;
+      
+      const result = await this.pool.query(query);
+      return result.rows;
+    } catch (error) {
+      logger.error('Error getting all users:', error);
+      throw new Error('Failed to get users');
+    }
+  }
+
+  async getUserWithProjects(userId: string): Promise<UserWithProjects | null> {
+    try {
+      const userQuery = `
+        SELECT id, username, name, avatar_url, is_active, created_at, last_login_at
+        FROM users 
+        WHERE id = $1
+      `;
+      
+      const userResult = await this.pool.query(userQuery, [userId]);
+      
+      if (userResult.rows.length === 0) {
+        return null;
+      }
+
+      const user = userResult.rows[0];
+
+      const projectsQuery = `
+        SELECT p.key as project_key, p.name as project_name
+        FROM user_project_permissions upp
+        JOIN projects p ON upp.project_id = p.id
+        WHERE upp.user_id = $1
+      `;
+      
+      const projectsResult = await this.pool.query(projectsQuery, [userId]);
+      
+      return {
+        ...user,
+        projects: projectsResult.rows.map((row: any) => ({ 
+          key: row.project_key, 
+          name: row.project_name 
+        }))
+      };
+    } catch (error) {
+      logger.error('Error getting user with projects:', error);
+      throw new Error('Failed to get user with projects');
+    }
+  }
+
+  async updateUser(id: string, updates: UpdateUserRequest): Promise<User | null> {
+    try {
+      const setParts: string[] = [];
+      const values: any[] = [];
+      let paramIndex = 1;
+
+      if (updates.name !== undefined) {
+        setParts.push(`name = $${paramIndex}`);
+        values.push(updates.name);
+        paramIndex++;
+      }
+
+      if (updates.avatar_url !== undefined) {
+        setParts.push(`avatar_url = $${paramIndex}`);
+        values.push(updates.avatar_url);
+        paramIndex++;
+      }
+
+      if (updates.is_active !== undefined) {
+        setParts.push(`is_active = $${paramIndex}`);
+        values.push(updates.is_active);
+        paramIndex++;
+      }
+
+      if (setParts.length === 0) {
+        throw new Error('No fields to update');
+      }
+
+      setParts.push(`updated_at = NOW()`);
+      values.push(id);
+
+      const query = `
+        UPDATE users 
+        SET ${setParts.join(', ')}
+        WHERE id = $${paramIndex}
+        RETURNING id, username, name, avatar_url, is_active, created_at, last_login_at
+      `;
+
+      const result = await this.pool.query(query, values);
       
       if (result.rows.length === 0) {
         return null;
       }
-      
-      const user = result.rows[0];
-      const projects = await this.getUserProjects(userId);
-      
-      return {
-        id: user.id,
-        username: user.username,
-        name: user.name,
-        avatar_url: user.avatar_url,
-        is_active: user.is_active,
-        created_at: user.created_at,
-        updated_at: user.updated_at,
-        permissions: [],
-        projects: projects
-      };
+
+      logger.info(`User updated: ${id}`);
+      return result.rows[0];
     } catch (error) {
-      logger.error('Get user with permissions error:', error);
-      return null;
+      logger.error('Error updating user:', error);
+      throw new Error('Failed to update user');
     }
   }
 
-  async updateUser(userId: string, updateData: UpdateUserRequest): Promise<any> {
+  async deleteUser(id: string): Promise<boolean> {
     try {
-      const fields = [];
-      const values = [];
-      let paramIndex = 1;
+      const query = `DELETE FROM users WHERE id = $1 RETURNING id`;
+      const result = await this.pool.query(query, [id]);
       
-      if (updateData.name) {
-        fields.push(`name = $${paramIndex++}`);
-        values.push(updateData.name);
+      const deleted = (result.rowCount || 0) > 0;
+      if (deleted) {
+        logger.info(`User deleted: ${id}`);
       }
       
-      if (updateData.avatar_url) {
-        fields.push(`avatar_url = $${paramIndex++}`);
-        values.push(updateData.avatar_url);
-      }
+      return deleted;
+    } catch (error) {
+      logger.error('Error deleting user:', error);
+      throw new Error('Failed to delete user');
+    }
+  }
+
+  async verifyPassword(username: string, password: string): Promise<User | null> {
+    try {
+      const query = `
+        SELECT id, username, name, password_hash, avatar_url, is_active, created_at, last_login_at
+        FROM users 
+        WHERE username = $1 AND is_active = true
+      `;
       
-      if (fields.length === 0) {
+      const result = await this.pool.query(query, [username]);
+      
+      if (result.rows.length === 0) {
         return null;
       }
+
+      const user = result.rows[0];
+      const isValidPassword = await bcrypt.compare(password, user.password_hash);
       
-      values.push(userId);
-      
-      const result = await query(
-        `UPDATE users SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${paramIndex} RETURNING *`,
-        values
-      );
-      
-      return result.rows[0];
+      if (!isValidPassword) {
+        return null;
+      }
+
+      // 移除密碼雜湊後返回
+      const { password_hash, ...userWithoutPassword } = user;
+      return userWithoutPassword;
     } catch (error) {
-      logger.error('Update user error:', error);
-      throw error;
+      logger.error('Error verifying password:', error);
+      throw new Error('Failed to verify password');
     }
   }
 
-  async updateAvatar(userId: string, avatarUrl: string): Promise<any> {
+  async updateLastLogin(userId: string): Promise<void> {
     try {
-      const result = await query(
-        'UPDATE users SET avatar_url = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
-        [avatarUrl, userId]
-      );
-      
-      return result.rows[0];
+      const query = `UPDATE users SET last_login_at = NOW() WHERE id = $1`;
+      await this.pool.query(query, [userId]);
     } catch (error) {
-      logger.error('Update avatar error:', error);
-      throw error;
+      logger.error('Error updating last login:', error);
+      // 不拋出錯誤，因為這不是關鍵操作
     }
   }
 
-  async getUserProjects(userId: string): Promise<any[]> {
+  async getUsersCount(): Promise<number> {
     try {
-      logger.info('Getting projects for user:', userId);
-      
-      const result = await query(`
-        SELECT 
-          upp.id as permission_id,
-          upp.user_id,
-          upp.project_id,
-          upp.granted_at,
-          upp.granted_by,
-          p.id as project_id,
-          p.project_key,
-          p.project_name,
-          p.description,
-          p.is_active,
-          p.created_at as project_created_at
-        FROM user_project_permissions upp
-        JOIN projects p ON upp.project_id = p.id
-        WHERE upp.user_id = $1 AND p.is_active = true
-        ORDER BY p.project_name
-      `, [userId]);
-      
-      logger.info('Found projects for user:', {
-        userId,
-        projectCount: result.rows.length,
-        projects: result.rows.map(row => ({ key: row.project_key, name: row.project_name }))
-      });
-      
-      return result.rows.map(row => ({
-        id: row.permission_id,
-        user_id: row.user_id,
-        project_id: row.project_id,
-        granted_at: row.granted_at,
-        granted_by: row.granted_by,
-        project: {
-          id: row.project_id,
-          key: row.project_key,
-          name: row.project_name,
-          description: row.description,
-          path: `/projects/${row.project_key}`
-        }
-      }));
+      const query = `SELECT COUNT(*) as count FROM users`;
+      const result = await this.pool.query(query);
+      return parseInt(result.rows[0].count);
     } catch (error) {
-      logger.error('Get user projects error:', error);
-      return [];
+      logger.error('Error getting users count:', error);
+      throw new Error('Failed to get users count');
     }
   }
 
-  async hasProjectPermission(userId: string, projectKey: string): Promise<boolean> {
+  async getActiveUsersCount(): Promise<number> {
     try {
-      const result = await query(`
-        SELECT 1 
-        FROM user_project_permissions upp
-        JOIN projects p ON upp.project_id = p.id
-        WHERE upp.user_id = $1 AND p.project_key = $2 AND p.is_active = true
-      `, [userId, projectKey]);
-      
-      return result.rows.length > 0;
+      const query = `SELECT COUNT(*) as count FROM users WHERE is_active = true`;
+      const result = await this.pool.query(query);
+      return parseInt(result.rows[0].count);
     } catch (error) {
-      logger.error('Check permission error:', error);
-      return false;
+      logger.error('Error getting active users count:', error);
+      throw new Error('Failed to get active users count');
     }
   }
 }

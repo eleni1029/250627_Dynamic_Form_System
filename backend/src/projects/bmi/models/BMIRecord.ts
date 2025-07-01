@@ -137,7 +137,7 @@ export class BMIModel {
     try {
       const query = `DELETE FROM bmi_records WHERE id = $1 AND user_id = $2 RETURNING id`;
       const result = await this.pool.query(query, [recordId, userId]);
-      return result.rowCount > 0;
+      return (result.rowCount || 0) > 0;
     } catch (error) {
       logger.error('Error deleting BMI record:', error);
       throw new Error('Failed to delete BMI record');
@@ -148,7 +148,7 @@ export class BMIModel {
     try {
       const query = `DELETE FROM bmi_records WHERE user_id = $1 RETURNING id`;
       const result = await this.pool.query(query, [userId]);
-      return result.rowCount;
+      return result.rowCount || 0;
     } catch (error) {
       logger.error('Error clearing BMI history:', error);
       throw new Error('Failed to clear BMI history');

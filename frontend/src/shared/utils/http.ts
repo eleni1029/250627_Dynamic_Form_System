@@ -47,77 +47,95 @@ class HttpClient {
       }
 
       return data;
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Failed to load TDEE history';
-      console.error('TDEE history loading error:', err);
-    } finally {
-      isLoading.value = false;
-    }
-  };
-
-  // 清除結果
-  const clearResult = () => {
-    lastResult.value = null;
-    error.value = null;
-  };
-
-  // 清除歷史
-  const clearHistory = async () => {
-    try {
-      isLoading.value = true;
-      error.value = null;
+    } catch (error) {
+      clearTimeout(timeoutId);
       
-      const response = await tdeeApi.clearHistory();
-      
-      if (response.success) {
-        history.value = [];
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          throw new Error('Request timeout');
+        }
+        console.error(`HTTP request failed: ${endpoint}`, error);
+        throw error;
       }
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Failed to clear TDEE history';
-      console.error('TDEE history clearing error:', err);
-    } finally {
-      isLoading.value = false;
+      
+      throw new Error('Unknown error occurred');
     }
-  };
+  }
 
-  // 刪除特定記錄
-  const deleteRecord = async (recordId: string) => {
-    try {
-      isLoading.value = true;
-      error.value = null;
-      
-      const response = await tdeeApi.deleteRecord(recordId);
-      
-      if (response.success) {
-        history.value = history.value.filter(record => record.id !== recordId);
+  async get<T = any>(endpoint: string, params?: Record<string, any>): Promise<ApiResponse<T>> {
+    let url = endpoint;
+    if (params) {
+      const searchParams = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== null && value !== undefined) {
+          searchParams.append(key, String(value));
+        }
+      });
+      const queryString = searchParams.toString();
+      if (queryString) {
+        url += `?${queryString}`;
       }
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Failed to delete TDEE record';
-      console.error('TDEE record deletion error:', err);
-    } finally {
-      isLoading.value = false;
     }
-  };
+    
+    return this.request<T>(url, { method: 'GET' });
+  }
 
-  return {
-    // 狀態
-    isLoading,
-    lastResult,
-    lastInput,
-    history,
-    activityLevels,
-    error,
-    
-    // 計算屬性
-    hasResult,
-    hasHistory,
-    
-    // 方法
-    initializeData,
-    calculateTDEE,
-    loadHistory,
-    clearResult,
-    clearHistory,
-    deleteRecord
-  };
-});
+  async post<T = any>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
+    return this.request<T>(endpoint, {
+      method: 'POST',
+      body: data ? JSON.stringify(data) : undefined,
+    });
+  }
+
+  async put<T = any>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
+    return this.request<T>(endpoint, {
+      method: 'PUT',
+      body: data ? JSON.stringify(data) : undefined,
+    });
+  }
+
+  async patch<T = any>(endpoint: string, data?: any): Promise<ApiResponse<T>> {
+    return this.request<T>(endpoint, {
+      method: 'PATCH',
+      body: data ? JSON.stringify(data) : undefined,
+    });
+  }
+
+  async delete<T = any>(endpoint: string): Promise<ApiResponse<T>> {
+    return this.request<T>(endpoint, { method: 'DELETE' });
+  }
+
+  // 上傳文件的專用方法
+  async upload<T = any>(endpoint: string, formData: FormData): Promise<ApiResponse<T>> {
+    return this.request<T>(endpoint, {
+      method: 'POST',
+      body: formData,
+      headers: {}, // 讓瀏覽器自動設置 multipart/form-data 邊界
+    });
+  }
+
+  // 健康檢查
+  async healthCheck(): Promise<boolean> {
+    try {
+      await this.get('/health');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // 設置基礎 URL
+  setBaseURL(url: string): void {
+    this.baseURL = url;
+  }
+
+  // 設置超時時間
+  setTimeout(ms: number): void {
+    this.timeout = ms;
+  }
+}
+
+export const httpClient = new HttpClient();
+
+// 導出類型以供其他模組使用
+export type { ApiResponse };

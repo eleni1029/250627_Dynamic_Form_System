@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { ACTIVITY_LEVELS } from '../types/tdee-activity.types';
-import { validateCalorieNeeds } from '../types/tdee-calculations.types';
+import { ACTIVITY_LEVELS, validateTDEEInput } from '../types/tdee.types';
 import { logger } from '../../../utils/logger';
 
 export const validateTDEECalculation = (req: Request, res: Response, next: NextFunction): void => {
@@ -77,7 +76,7 @@ export const validateTDEECalculation = (req: Request, res: Response, next: NextF
     }
 
     // 活動等級驗證
-    if (!ACTIVITY_LEVELS[activity_level]) {
+    if (!ACTIVITY_LEVELS[activity_level as keyof typeof ACTIVITY_LEVELS]) {
       res.status(400).json({
         success: false,
         error: 'Invalid activity level',
@@ -196,7 +195,7 @@ export const validateActivityLevel = (req: Request, res: Response, next: NextFun
       return;
     }
 
-    if (!ACTIVITY_LEVELS[activity_level]) {
+    if (!ACTIVITY_LEVELS[activity_level as keyof typeof ACTIVITY_LEVELS]) {
       res.status(400).json({
         success: false,
         error: 'Invalid activity level',

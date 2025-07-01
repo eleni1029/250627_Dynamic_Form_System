@@ -175,11 +175,13 @@ export class BMIService {
       const recentRecords = await this.bmiModel.findByUserId(userId, 5);
       if (recentRecords.length < 2) return 'insufficient_data';
       
-      const latest = recentRecords[0].bmi;
-      const previous = recentRecords[1].bmi;
+      const latest = recentRecords[0]?.bmi;
+      const previous = recentRecords[1]?.bmi;
       
-      if (latest > previous + 0.5) return 'increasing';
-      if (latest < previous - 0.5) return 'decreasing';
+      if (latest && previous) {
+        if (latest > previous + 0.5) return 'increasing';
+        if (latest < previous - 0.5) return 'decreasing';
+      }
       return 'stable';
     } catch (error) {
       return 'unknown';

@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { AuthenticatedRequest } from '../../../types/auth.types';
 import { BMIService } from '../services/BMIService';
-import { BMICalculationRequest } from '../types/bmi.types';
+import { BMICalculationRequest } from '../types';
 import { logger } from '../../../utils/logger';
 
 export class BMIController {
@@ -179,6 +179,15 @@ export class BMIController {
         return;
       }
 
+      if (!recordId) {
+        res.status(400).json({
+          success: false,
+          error: 'Record ID is required',
+          code: 'RECORD_ID_REQUIRED'
+        });
+        return;
+      }
+
       const deleted = await this.bmiService.deleteBMIRecord(recordId, userId);
       
       if (deleted) {
@@ -262,7 +271,6 @@ export class BMIController {
     }
   };
 
-  // 額外的統計端點
   getTrend = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       const userId = req.user?.id;
@@ -278,22 +286,23 @@ export class BMIController {
       const days = parseInt(req.query.days as string) || 30;
       const records = await this.bmiService.getUserBMIHistory(userId, Math.min(days, 100));
       
-      // 簡單的趨勢分析
       let trend = 'stable';
       if (records.length >= 2) {
-        const latest = records[0].bmi;
-        const previous = records[1].bmi;
-        const difference = latest - previous;
+        const latest = records[0]?.bmi;
+        const previous = records[1]?.bmi;
         
-        if (difference > 0.5) trend = 'increasing';
-        else if (difference < -0.5) trend = 'decreasing';
+        if (latest && previous) {
+          const difference = latest - previous;
+          if (difference > 0.5) trend = 'increasing';
+          else if (difference < -0.5) trend = 'decreasing';
+        }
       }
 
       res.json({
         success: true,
         data: {
           trend,
-          records: records.slice(0, 10), // 只返回最近10筆用於圖表
+          records: records.slice(0, 10),
           summary: {
             totalRecords: records.length,
             timeframe: `${days} days`,
