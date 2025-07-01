@@ -1,3 +1,12 @@
+#!/bin/bash
+
+echo "🔧 修復 TDEE Model 的資料庫初始化問題"
+echo "=================================="
+
+# ===== 修復 TDEE Model =====
+echo "📝 修復 TDEE Model..."
+
+cat > backend/src/projects/tdee/models/TDEERecord.ts << 'EOF'
 import { Pool } from 'pg';
 import { logger } from '../../../utils/logger';
 
@@ -157,3 +166,20 @@ export class TDEEModel {
     }
   }
 }
+EOF
+
+# ===== 檢查是否還有其他使用舊 database connection 的文件 =====
+echo "🔍 檢查其他可能有問題的文件..."
+
+# 檢查是否還有其他地方直接使用 pool
+find backend/src -name "*.ts" -type f -exec grep -l "pool.*=" {} \; 2>/dev/null | while read file; do
+  if [[ "$file" != *"database/connection.ts"* ]]; then
+    echo "⚠️  發現可能有問題的文件: $file"
+  fi
+done
+
+echo ""
+echo "✅ TDEE Model 修復完成！"
+echo ""
+echo "🚀 現在重新啟動後端："
+echo "cd backend && npm run dev"

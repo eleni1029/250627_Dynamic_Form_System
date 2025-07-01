@@ -1,175 +1,65 @@
+// ===== frontend/src/projects/bmi/stores/bmi.ts =====
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { ref } from 'vue';
 import { bmiApi } from '../api';
-import type { BMIInput, BMIResult, BMIRecord } from '../types';
+import type { BMIInput, BMIResult } from '../types';
 
 export const useBMIStore = defineStore('bmi', () => {
-  // 狀態
-  const isLoading = ref(false);
-  const lastResult = ref<BMIResult | null>(null);
   const lastInput = ref<BMIInput | null>(null);
-  const history = ref<BMIRecord[]>([]);
-  const error = ref<string | null>(null);
+  const lastResult = ref<BMIResult | null>(null);
+  const isLoading = ref(false);
 
-  // 計算屬性
-  const hasResult = computed(() => lastResult.value !== null);
-  const hasHistory = computed(() => history.value.length > 0);
-
-  // 初始化數據
-  const initializeData = async () => {
+  const loadLastInput = async () => {
     try {
-      isLoading.value = true;
-      error.value = null;
-      
-      // 獲取最新記錄
-      const response = await bmiApi.getLatest();
+      const response = await bmiApi.getLastInput();
       if (response.success && response.data) {
-        const record = response.data;
-        lastInput.value = {
-          height: record.height,
-          weight: record.weight,
-          age: record.age,
-          gender: record.gender as 'male' | 'female' | undefined
-        };
-        lastResult.value = {
-          bmi: record.bmi,
-          category: record.category,
-          categoryCode: record.category_code,
-          isHealthy: record.is_healthy,
-          whoStandard: record.who_classification,
-          healthRisks: record.health_risks,
-          recommendations: record.recommendations
-        };
+        lastInput.value = response.data;
       }
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Failed to initialize BMI data';
-      console.error('BMI store initialization error:', err);
-    } finally {
-      isLoading.value = false;
+    } catch (error) {
+      console.error('載入上次輸入失敗:', error);
     }
   };
 
-  // 計算 BMI
-  const calculateBMI = async (input: BMIInput) => {
+  const calculate = async (input: BMIInput): Promise<BMIResult> => {
+    isLoading.value = true;
     try {
-      isLoading.value = true;
-      error.value = null;
-
       const response = await bmiApi.calculate(input);
-      
       if (response.success && response.data) {
+        // API 返回 { calculation: BMIResult, input: BMIInput, record: {...} }
+        // 我們只需要 calculation 部分
+        const calculationResult = response.data.calculation;
+        lastResult.value = calculationResult;
         lastInput.value = input;
-        lastResult.value = response.data.calculation;
-        
-        // 添加到歷史記錄的開頭
-        if (response.data.record) {
-          const newRecord: BMIRecord = {
-            id: response.data.record.id,
-            user_id: '', // 會由後端填入
-            ...input,
-            bmi: response.data.calculation.bmi,
-            category: response.data.calculation.category,
-            category_code: response.data.calculation.categoryCode,
-            is_healthy: response.data.calculation.isHealthy,
-            who_classification: response.data.calculation.whoStandard,
-            health_risks: response.data.calculation.healthRisks,
-            recommendations: response.data.calculation.recommendations,
-            created_at: response.data.record.created_at,
-            updated_at: response.data.record.created_at
-          };
-          history.value.unshift(newRecord);
-        }
+        return calculationResult;
       }
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'BMI calculation failed';
-      console.error('BMI calculation error:', err);
-      throw err;
+      throw new Error(response.error || '計算失敗');
     } finally {
       isLoading.value = false;
     }
   };
 
-  // 獲取歷史記錄
-  const loadHistory = async (limit: number = 50) => {
+  const saveInput = async (input: BMIInput) => {
     try {
-      isLoading.value = true;
-      error.value = null;
-      
-      const response = await bmiApi.getHistory({ limit });
-      
-      if (response.success && response.data) {
-        history.value = response.data.records;
-      }
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Failed to load BMI history';
-      console.error('BMI history loading error:', err);
-    } finally {
-      isLoading.value = false;
+      await bmiApi.saveInput(input);
+      lastInput.value = input;
+    } catch (error) {
+      console.error('保存輸入失敗:', error);
     }
   };
 
-  // 清除結果
-  const clearResult = () => {
+  const resetState = () => {
+    lastInput.value = null;
     lastResult.value = null;
-    error.value = null;
-  };
-
-  // 清除歷史
-  const clearHistory = async () => {
-    try {
-      isLoading.value = true;
-      error.value = null;
-      
-      const response = await bmiApi.clearHistory();
-      
-      if (response.success) {
-        history.value = [];
-      }
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Failed to clear BMI history';
-      console.error('BMI history clearing error:', err);
-    } finally {
-      isLoading.value = false;
-    }
-  };
-
-  // 刪除特定記錄
-  const deleteRecord = async (recordId: string) => {
-    try {
-      isLoading.value = true;
-      error.value = null;
-      
-      const response = await bmiApi.deleteRecord(recordId);
-      
-      if (response.success) {
-        history.value = history.value.filter(record => record.id !== recordId);
-      }
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Failed to delete BMI record';
-      console.error('BMI record deletion error:', err);
-    } finally {
-      isLoading.value = false;
-    }
+    isLoading.value = false;
   };
 
   return {
-    // 狀態
-    isLoading,
-    lastResult,
     lastInput,
-    history,
-    error,
-    
-    // 計算屬性
-    hasResult,
-    hasHistory,
-    
-    // 方法
-    initializeData,
-    calculateBMI,
-    loadHistory,
-    clearResult,
-    clearHistory,
-    deleteRecord
+    lastResult,
+    isLoading,
+    loadLastInput,
+    calculate,
+    saveInput,
+    resetState
   };
 });

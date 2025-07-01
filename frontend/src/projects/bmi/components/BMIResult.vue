@@ -12,7 +12,7 @@
           <span class="bmi-unit">kg/m²</span>
         </div>
         <div class="bmi-category" :class="getCategoryClass(result.category)">
-          {{ result.category_cn }}
+          {{ result.category_cn || result.category }}
         </div>
       </div>
     </div>

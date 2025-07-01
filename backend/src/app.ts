@@ -2,17 +2,10 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import session from 'express-session';
-import multer from 'multer';
 import path from 'path';
 import { connectDatabase } from './database/connection';
 import { logger } from './utils/logger';
 import { sessionConfig } from './config/session';
-
-// 路由導入
-import authRoutes from './routes/auth.routes';
-import userRoutes from './routes/user.routes';
-import adminRoutes from './routes/admin.routes';
-import projectsRoutes from './routes/projects.routes';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -33,24 +26,17 @@ app.use(session(sessionConfig));
 // 靜態檔案服務
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// 健康檢查
+// 基本健康檢查（不依賴資料庫）
 app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
     services: {
-      database: 'connected',
-      session: 'active',
-      auth: 'ready'
+      server: 'running',
+      session: 'active'
     }
   });
 });
-
-// API 路由
-app.use('/api/auth', authRoutes);
-app.use('/api/user', userRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/projects', projectsRoutes);
 
 // 根路徑
 app.get('/', (req, res) => {
@@ -62,36 +48,67 @@ app.get('/', (req, res) => {
   });
 });
 
-// 404 處理
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    error: 'Route not found',
-    code: 'ROUTE_NOT_FOUND',
-    path: req.path
-  });
-});
-
-// 錯誤處理
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  logger.error('Express error:', err);
-  res.status(err.status || 500).json({
-    success: false,
-    error: 'Internal server error',
-    code: 'INTERNAL_SERVER_ERROR'
-  });
-});
-
 // 啟動服務器
 async function startServer() {
   try {
+    // 先連接資料庫
     await connectDatabase();
     logger.info('Database connected successfully');
+
+    // 資料庫連接成功後，再導入並設置路由
+    const authRoutes = (await import('./routes/auth.routes')).default;
+    const userRoutes = (await import('./routes/user.routes')).default;
+    const adminRoutes = (await import('./routes/admin.routes')).default;
+    const projectsRoutes = (await import('./routes/projects.routes')).default;
+
+    // 註冊 API 路由
+    app.use('/api/auth', authRoutes);
+    app.use('/api/user', userRoutes);
+    app.use('/api/admin', adminRoutes);
+    app.use('/api/projects', projectsRoutes);
+
+    // 更新健康檢查以包含資料庫狀態
+    app.get('/api/health', (req, res) => {
+      res.json({
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        services: {
+          database: 'connected',
+          session: 'active',
+          auth: 'ready',
+          projects: {
+            bmi: 'ready',
+            tdee: 'ready'
+          }
+        }
+      });
+    });
+
+    // 404 處理
+    app.use((req, res) => {
+      res.status(404).json({
+        success: false,
+        error: 'Route not found',
+        code: 'ROUTE_NOT_FOUND',
+        path: req.path
+      });
+    });
+
+    // 錯誤處理
+    app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+      logger.error('Express error:', err);
+      res.status(err.status || 500).json({
+        success: false,
+        error: 'Internal server error',
+        code: 'INTERNAL_SERVER_ERROR'
+      });
+    });
 
     app.listen(PORT, () => {
       logger.info(`🚀 Server is running on port ${PORT}`);
       logger.info(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
       logger.info(`🏥 Health check: http://localhost:${PORT}/health`);
+      logger.info(`🏥 API Health check: http://localhost:${PORT}/api/health`);
     });
   } catch (error) {
     logger.error('Failed to start server:', error);
@@ -122,37 +139,3 @@ process.on('uncaughtException', (error) => {
 startServer();
 
 export default app;
-
-// API 健康檢查
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    services: {
-      database: 'connected',
-      session: 'active',
-      auth: 'ready',
-      projects: {
-        bmi: 'ready',
-        tdee: 'ready'
-      }
-    }
-  });
-});
-
-// API 健康檢查
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    services: {
-      database: 'connected',
-      session: 'active',
-      auth: 'ready',
-      projects: {
-        bmi: 'ready',
-        tdee: 'ready'
-      }
-    }
-  });
-});
