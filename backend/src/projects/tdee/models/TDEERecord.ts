@@ -37,6 +37,8 @@ export interface TDEECalculationResult {
     multiplier: number;
     description: string;
     name: string;
+    chineseName: string;  // 添加這個屬性
+    intensity: string;
   };
   macronutrients?: any;
   recommendations?: any;

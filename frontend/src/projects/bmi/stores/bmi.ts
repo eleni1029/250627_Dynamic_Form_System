@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { bmiApi } from '../api';
-import type { BMIInput, BMIResult, BMIRecord, BMIFormData } from '../types';
+import type { BMIInput, BMIResult, BMIRecord } from '../types';
 
 export const useBMIStore = defineStore('bmi', () => {
   // 狀態

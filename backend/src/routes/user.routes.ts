@@ -14,21 +14,23 @@ router.get('/permissions/:userId', authMiddleware, async (req, res) => {
     const { userId } = req.params;
     
     if (!userId) {
-      return res.status(400).json({
+      res.status(400).json({
         success: false,
         error: 'User ID is required',
         code: 'MISSING_USER_ID'
       });
+      return;
     }
 
     const userWithProjects = await getUserService().getUserWithProjects(userId);
     
     if (!userWithProjects) {
-      return res.status(404).json({
+      res.status(404).json({
         success: false,
         error: 'User not found',
         code: 'USER_NOT_FOUND'
       });
+      return;
     }
 
     const projects = userWithProjects.projects;
